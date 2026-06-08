@@ -1,18 +1,22 @@
 export const activities = [
   {
     activity: "Slab Casting",
-    unit: "cum"
+    unit: "Cum",
+  },
+  {
+    activity: "Column Casting",
+    unit: "Cum",
+  },
+  {
+    activity: "Beam Casting",
+    unit: "Cum",
   },
   {
     activity: "Steel Binding",
-    unit: "MT"
+    unit: "MT",
   },
   {
     activity: "Brickwork",
-    unit: "sqm"
+    unit: "Sqm",
   },
-  {
-    activity: "Plaster",
-    unit: "sqm"
-  }
 ];
