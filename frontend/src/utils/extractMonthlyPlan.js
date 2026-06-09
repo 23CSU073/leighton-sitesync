@@ -95,6 +95,7 @@ export const extractMonthlyPlan = (rows) => {
     );
     const pour = pourCell ? String(pourCell).trim() : "";
     const activity = activityCell ? String(activityCell).trim() : "";
+    const isSpecialSection = ["PCC", "NTA", "Central NTA"].includes(currentTower);
     const signature = [
       currentTower,
       currentLevel,
@@ -103,7 +104,13 @@ export const extractMonthlyPlan = (rows) => {
       quantity,
     ].join("|");
 
-    if (!currentTower || !currentLevel || !pour || quantity <= 0 || seen.has(signature)) {
+    if (
+      !currentTower ||
+      !currentLevel ||
+      (!pour && !isSpecialSection) ||
+      quantity <= 0 ||
+      seen.has(signature)
+    ) {
       return;
     }
 
