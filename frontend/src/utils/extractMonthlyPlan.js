@@ -1,5 +1,17 @@
 const getCell = (row, index) => row?.[index] ?? null;
 
+const isRealTowerName = (value) =>
+  typeof value === "string" &&
+  /^(Tower\s*\d+|PCC|NTA|Central NTA)$/i.test(value.trim());
+
+const isRealLevelName = (value) =>
+  typeof value === "string" &&
+  !/^(Level|Tower|Plan|Actual|S\.No\.|Elements\/Pours|Elements)$/i.test(value.trim());
+
+const isSpecialAreaName = (value) =>
+  typeof value === "string" &&
+  /^(PCC|NTA|Central NTA)$/i.test(value.trim());
+
 const getMonthlyTotal = (row) => {
   const candidateIndexes = [38, 39, 40];
 
@@ -26,16 +38,17 @@ export const extractMonthlyPlan = (rows) => {
     const rowType = getCell(row, 6);
     const activityCell = getCell(row, 7);
 
-    if (towerCell && typeof towerCell === "string" && towerCell.startsWith("Tower")) {
-      currentTower = towerCell.trim();
+    if (isRealTowerName(towerCell)) {
+      currentTower = String(towerCell).trim();
     }
 
-    if (towerCell === "PCC" || towerCell === "NTA" || towerCell === "Central NTA") {
-      currentTower = towerCell.trim();
+    if (isRealLevelName(levelCell)) {
+      currentLevel = String(levelCell).trim();
     }
 
-    if (levelCell && typeof levelCell === "string") {
-      currentLevel = levelCell.trim();
+    if (isSpecialAreaName(levelCell)) {
+      currentTower = String(levelCell).trim();
+      currentLevel = String(levelCell).trim();
     }
 
     if (rowType !== "Plan") {
