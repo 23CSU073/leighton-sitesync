@@ -32,6 +32,12 @@ const sumAchievedTotals = (rows) =>
     0
   );
 
+const emptyLookAheadWeeks = () => [
+  { label: "Week 2", value: 0 },
+  { label: "Week 3", value: 0 },
+  { label: "Week 4", value: 0 },
+];
+
 const buildWeeklyRows = (plans, achievedData) => {
   const weeklyRows = emptyWeeklyRows();
 
@@ -64,6 +70,20 @@ const buildWeeklyRows = (plans, achievedData) => {
   });
 };
 
+const buildLookAheadWeeks = (plans) => {
+  const lookAheadWeeks = emptyLookAheadWeeks();
+
+  plans.forEach((item) => {
+    const weeklyPlan = Array.isArray(item.weeklyPlan) ? item.weeklyPlan : [];
+
+    lookAheadWeeks[0].value += Number(weeklyPlan[1] || 0);
+    lookAheadWeeks[1].value += Number(weeklyPlan[2] || 0);
+    lookAheadWeeks[2].value += Number(weeklyPlan[3] || 0);
+  });
+
+  return lookAheadWeeks;
+};
+
 const getLocationLabel = (tower) => {
   const group = getSiteGroup(tower);
 
@@ -92,6 +112,7 @@ export const getWeeklyData = async () => {
   const percentage = totalPlan === 0 ? 0 : ((totalAchieved / totalPlan) * 100).toFixed(1);
   const balance = totalPlan - totalAchieved;
   const weeklyRows = buildWeeklyRows(plans, achievedData);
+  const lookAheadWeeks = buildLookAheadWeeks(plans);
 
   return {
     totalPlan,
@@ -99,5 +120,6 @@ export const getWeeklyData = async () => {
     percentage,
     balance,
     weeklyRows,
+    lookAheadWeeks,
   };
 };

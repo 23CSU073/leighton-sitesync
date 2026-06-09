@@ -25,11 +25,45 @@ const getMonthlyTotal = (row) => {
   return 0;
 };
 
+const getWeekIndexFromHeader = (headerCell) => {
+  if (!headerCell) {
+    return null;
+  }
+
+  const date = new Date(headerCell);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const day = date.getUTCDate();
+
+  if (day >= 1 && day <= 7) return 0;
+  if (day >= 8 && day <= 14) return 1;
+  if (day >= 15 && day <= 21) return 2;
+  if (day >= 22 && day <= 31) return 3;
+  return null;
+};
+
+const buildWeekColumnMap = (rows) => {
+  const headerRow = rows[4] || [];
+  const weekColumns = [[], [], [], []];
+
+  for (let index = 8; index <= 37; index += 1) {
+    const weekIndex = getWeekIndexFromHeader(headerRow[index]);
+    if (weekIndex !== null) {
+      weekColumns[weekIndex].push(index);
+    }
+  }
+
+  return weekColumns;
+};
+
 export const extractMonthlyPlan = (rows) => {
   let currentTower = "";
   let currentLevel = "";
   const plans = [];
   const seen = new Set();
+  const weekColumns = buildWeekColumnMap(rows);
 
   rows.forEach((row) => {
     const towerCell = getCell(row, 3);
@@ -56,6 +90,9 @@ export const extractMonthlyPlan = (rows) => {
     }
 
     const quantity = getMonthlyTotal(row);
+    const weeklyPlan = weekColumns.map((columns) =>
+      columns.reduce((sum, columnIndex) => sum + Number(getCell(row, columnIndex) || 0), 0)
+    );
     const pour = pourCell ? String(pourCell).trim() : "";
     const activity = activityCell ? String(activityCell).trim() : "";
     const signature = [
@@ -79,6 +116,7 @@ export const extractMonthlyPlan = (rows) => {
       pour,
       activity,
       plannedQuantity: quantity,
+      weeklyPlan,
     });
   });
 

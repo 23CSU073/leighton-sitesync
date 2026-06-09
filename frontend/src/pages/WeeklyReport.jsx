@@ -26,7 +26,14 @@ function WeeklyReport({ setCurrentPage }) {
     );
   }
 
-  const { totalPlan, totalAchieved, percentage, balance, weeklyRows = [] } = weeklyData;
+  const {
+    totalPlan,
+    totalAchieved,
+    percentage,
+    balance,
+    weeklyRows = [],
+    lookAheadWeeks = [],
+  } = weeklyData;
   const shortfall = Number((totalAchieved - totalPlan).toFixed(1));
 
   return (
@@ -99,18 +106,12 @@ function WeeklyReport({ setCurrentPage }) {
         <h2 className="text-2xl font-bold mb-4">Look Ahead</h2>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          <div className="bg-blue-600 text-white p-5 rounded-xl text-center">
-            <h3 className="text-xl font-bold">Week 2</h3>
-            <p className="mt-3 text-3xl">3628</p>
-          </div>
-          <div className="bg-blue-600 text-white p-5 rounded-xl text-center">
-            <h3 className="text-xl font-bold">Week 3</h3>
-            <p className="mt-3 text-3xl">2924</p>
-          </div>
-          <div className="bg-blue-600 text-white p-5 rounded-xl text-center">
-            <h3 className="text-xl font-bold">Week 4</h3>
-            <p className="mt-3 text-3xl">6837</p>
-          </div>
+          {lookAheadWeeks.map((week) => (
+            <div key={week.label} className="bg-blue-600 text-white p-5 rounded-xl text-center">
+              <h3 className="text-xl font-bold">{week.label}</h3>
+              <p className="mt-3 text-3xl">{week.value}</p>
+            </div>
+          ))}
         </div>
       </div>
 
