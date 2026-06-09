@@ -1,51 +1,97 @@
+import { addMonthlyPlan } from "../services/monthlyPlanService";
+import {extractMonthlyPlan} from "../utils/extractMonthlyPlan";
 import { useState } from "react";
+import { parseExcelFile } from "../utils/excelParser";
 
 function MonthlyPlans({ setCurrentPage }) {
-  const [activeMonth, setActiveMonth] = useState("June 2026");
+
+  const [file, setFile] = useState(null);
+  const [uploaded, setUploaded] = useState(false);
+
+  const handleUpload = async () => {
+
+    if (!file) {
+      alert("Please select a file first.");
+      return;
+    }
+
+    try {
+
+      const rows = await parseExcelFile(file);
+      const plans =extractMonthlyPlan(rows);
+    console.log(plans);
+    for (const plan of plans){
+        await addMonthlyPlan(plan);
+    }
+    setUploaded(true);
+
+      alert(`${rows.length} records uploaded successfully`);
+      setUploaded(true);
+
+    } catch (error) {
+
+      console.error(error);
+
+      alert("Failed to read Excel file.");
+
+    }
+
+  };
 
   return (
     <div className="min-h-screen bg-slate-100 p-5">
 
       <button
         onClick={() => setCurrentPage("home")}
-        className="mb-5 bg-gray-200 px-4 py-2 rounded"
+        className="mb-5 bg-gray-200 px-4 py-2 rounded-lg"
       >
         ← Back
       </button>
 
-      <h1 className="text-3xl font-bold mb-6">
+      <h1 className="text-4xl font-bold mb-8">
         Monthly Plans
       </h1>
 
-      <div className="bg-white p-5 rounded-xl shadow mb-5">
-        <h2 className="font-bold text-xl">
-          Active Plan
-        </h2>
+      <div className="bg-white p-6 rounded-xl shadow">
 
-        <p className="text-green-600 mt-2 font-semibold">
-          {activeMonth}
+        <p className="text-xl font-semibold mb-5">
+          Upload Monthly Planner
         </p>
-      </div>
 
-      <div className="space-y-4">
-
-        <button
-          className="w-full bg-blue-600 text-white p-4 rounded-xl"
-        >
-          Upload Monthly Plan
-        </button>
-
-        <button
-          className="w-full bg-orange-500 text-white p-4 rounded-xl"
-        >
-          Replace Active Plan
-        </button>
+        <input
+          type="file"
+          accept=".xlsx,.xls"
+          onChange={(e) =>
+            setFile(e.target.files[0])
+          }
+        />
 
         <button
-          className="w-full bg-purple-600 text-white p-4 rounded-xl"
-        >
-          View Previous Plans
-        </button>
+  onClick={handleUpload}
+  className={`mt-5 w-full text-white p-4 rounded-xl font-semibold ${
+    uploaded
+      ? "bg-green-600"
+      : "bg-orange-500"
+  }`}
+>
+  {uploaded
+    ? "✓ Uploaded Successfully"
+    : "Upload Plan"}
+</button>
+
+        {file && (
+          <div className="mt-5">
+
+            <p>
+              Selected File:
+            </p>
+
+            <p className="font-bold">
+              {file.name}
+            </p>
+
+          </div>
+        )}
 
       </div>
 

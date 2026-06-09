@@ -1,6 +1,8 @@
-
-import { useState, useEffect  } from "react";
-import { addProgress, subscribeToProgress } from "../services/dprService";
+import { useState, useEffect } from "react";
+import {
+  addProgress,
+  subscribeToProgress,
+} from "../services/dprService";
 
 import { towers } from "../data/towers";
 import { levels } from "../data/levels";
@@ -8,65 +10,80 @@ import { cores } from "../data/cores";
 
 function DailyProgress({ setCurrentPage }) {
   const [formData, setFormData] = useState({
-    
+    date: new Date().toISOString().split("T")[0],
+
     tower: "",
     level: "",
     core: "",
+
+    shift: "",
+
     activity: "",
     quantity: "",
   });
 
   const [progressList, setProgressList] = useState([]);
-  useEffect(() => {
-  const unsubscribe = subscribeToProgress(
-    (data) => {
-      setProgressList(data);
-    }
-  );
 
-  return () => unsubscribe();
-}, []);
+  // Real-time listener
+  useEffect(() => {
+    const unsubscribe = subscribeToProgress((data) => {
+      setProgressList(data);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // KPI Card
   const totalConcreteToday = progressList.reduce(
     (total, item) => total + Number(item.quantity || 0),
     0
   );
 
+  // Submit
   const handleSubmit = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  const newEntry = {
-    date: new Date().toLocaleDateString(),
+    const newEntry = {
+      date: formData.date,
 
-    engineerName: "Site Engineer",
+      engineerName: "Site Engineer",
 
-    tower: formData.tower,
-    level: formData.level,
-    core: formData.core,
+      tower: formData.tower,
+      level: formData.level,
+      core: formData.core,
 
-    activity: formData.activity,
+      shift: formData.shift,
 
-    quantity: Number(formData.quantity),
+      activity: formData.activity,
+
+      quantity: Number(formData.quantity),
+    };
+
+    const success = await addProgress(newEntry);
+
+    if (success) {
+      alert("Progress Saved to Firestore");
+
+      setFormData({
+        date: new Date().toISOString().split("T")[0],
+
+        tower: "",
+        level: "",
+        core: "",
+
+        shift: "",
+
+        activity: "",
+        quantity: "",
+      });
+    } else {
+      alert("Failed to Save Progress");
+    }
   };
-
-  const success = await addProgress(newEntry);
-
-  if (success) {
-    alert("Progress Saved to Firestore");
-
-    setFormData({
-      tower: "",
-      level: "",
-      core: "",
-      activity: "",
-      quantity: "",
-    });
-  } else {
-    alert("Failed to Save Progress");
-  }
-};
 
   return (
     <div className="min-h-screen bg-slate-100 p-5">
+
       {/* Back Button */}
       <button
         onClick={() => setCurrentPage("home")}
@@ -85,7 +102,56 @@ function DailyProgress({ setCurrentPage }) {
         onSubmit={handleSubmit}
         className="space-y-5"
       >
-    
+
+        {/* Date */}
+        <div>
+          <label className="block mb-2 font-semibold">
+            Date
+          </label>
+
+          <input
+            type="date"
+            className="w-full p-4 rounded-xl border bg-white"
+            value={formData.date}
+            onChange={(e) =>
+              setFormData({
+                ...formData,
+                date: e.target.value,
+              })
+            }
+          />
+        </div>
+
+        {/* Shift */}
+        <div>
+          <label className="block mb-2 font-semibold">
+            Shift
+          </label>
+
+          <select
+            className="w-full p-4 rounded-xl border bg-white"
+            value={formData.shift}
+            onChange={(e) =>
+              setFormData({
+                ...formData,
+                shift: e.target.value,
+              })
+            }
+          >
+            <option value="">
+              Select Shift
+            </option>
+
+            <option value="Day">
+              Day Shift
+            </option>
+
+            <option value="Night">
+              Night Shift
+            </option>
+          </select>
+        </div>
+
         {/* Tower */}
         <select
           className="w-full p-4 rounded-xl border bg-white"
@@ -97,10 +163,15 @@ function DailyProgress({ setCurrentPage }) {
             })
           }
         >
-          <option value="">Select Tower</option>
+          <option value="">
+            Select Tower
+          </option>
 
           {towers.map((tower) => (
-            <option key={tower} value={tower}>
+            <option
+              key={tower}
+              value={tower}
+            >
               {tower}
             </option>
           ))}
@@ -117,10 +188,15 @@ function DailyProgress({ setCurrentPage }) {
             })
           }
         >
-          <option value="">Select Level</option>
+          <option value="">
+            Select Level
+          </option>
 
           {levels.map((level) => (
-            <option key={level} value={level}>
+            <option
+              key={level}
+              value={level}
+            >
               {level}
             </option>
           ))}
@@ -137,10 +213,15 @@ function DailyProgress({ setCurrentPage }) {
             })
           }
         >
-          <option value="">Select Core</option>
+          <option value="">
+            Select Core
+          </option>
 
           {cores.map((core) => (
-            <option key={core} value={core}>
+            <option
+              key={core}
+              value={core}
+            >
               {core}
             </option>
           ))}
@@ -187,12 +268,13 @@ function DailyProgress({ setCurrentPage }) {
         >
           Submit Progress
         </button>
+
       </form>
 
       {/* KPI Card */}
       <div className="mt-10 bg-green-600 text-white p-5 rounded-xl shadow">
         <p className="text-sm">
-          Today's Concrete Progress
+          Total Concrete Progress
         </p>
 
         <h2 className="text-4xl font-bold mt-2">
@@ -220,8 +302,9 @@ function DailyProgress({ setCurrentPage }) {
                 <p>
                   <strong>Date:</strong> {item.date}
                 </p>
+
                 <p>
-                <strong>Engineer:</strong> {item.engineerName}
+                  <strong>Engineer:</strong> {item.engineerName}
                 </p>
 
                 <p>
@@ -237,6 +320,10 @@ function DailyProgress({ setCurrentPage }) {
                 </p>
 
                 <p>
+                  <strong>Shift:</strong> {item.shift}
+                </p>
+
+                <p>
                   <strong>Activity:</strong> {item.activity}
                 </p>
 
@@ -248,6 +335,7 @@ function DailyProgress({ setCurrentPage }) {
           </div>
         )}
       </div>
+
     </div>
   );
 }

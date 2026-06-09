@@ -32,6 +32,21 @@ function Home({ setCurrentPage }) {
         >
           📅 Monthly Plans
         </button>
+        <button
+  onClick={() =>
+    setCurrentPage("actual-upload")
+  }
+  className="w-full bg-red-600 text-white p-6 rounded-xl text-xl font-semibold shadow"
+>
+  📈 Actual Excel Upload
+</button>
+        <button
+  onClick={() => setCurrentPage("weekly-report")}
+  className="w-full bg-cyan-600 text-white p-6 rounded-xl text-xl font-semibold shadow"
+>
+  📋 Weekly Report
+</button>
+
 
         <button
           onClick={() => setCurrentPage("dashboard")}
