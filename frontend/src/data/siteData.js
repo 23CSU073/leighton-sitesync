@@ -1,31 +1,55 @@
-export const siteData = {
-  "Area 1": [
-    "Tower 1",
-    "Tower 2",
-    "Tower 3",
-    "Tower 4",
-    "Tower 5",
-    "Tower 6",
-    "Tower 14",
-    "Tower 15",
-  ],
+export const siteAreas = {
 
-  "Area 2": [
-    "Tower 12",
-    "Tower 16",
-    "Tower 17",
-    "Tower 18",
-  ],
+  phase1: {
 
-  "Area 3": [
-    "Tower 7",
-    "Tower 8",
-    "Tower 9",
-    "Tower 10",
-  ],
+    typicalTowers: [
+      "Tower 1",
+      "Tower 2",
+      "Tower 3",
+      "Tower 4",
+      "Tower 5",
+      "Tower 6",
+      "Tower 14",
+      "Tower 15"
+    ],
 
-  "Area 4": [
-    "Club House",
-    "NTA",
-  ],
+    area2: [
+      "Tower 12",
+      "Tower 16",
+      "Tower 17",
+      "Tower 18"
+    ],
+
+    area3: [
+      "Tower 7",
+      "Tower 8",
+      "Tower 9",
+      "Tower 10"
+    ],
+
+    area4: [
+      "NTA",
+      "Central NTA"
+    ]
+
+  },
+
+  phase2: {
+
+    area2: [
+      "Tower 12",
+      "Tower 16",
+      "Tower 17",
+      "Tower 18"
+    ],
+
+    area3: [
+      "Tower 7",
+      "Tower 8",
+      "Tower 9",
+      "Tower 10"
+    ]
+
+  }
+
 };

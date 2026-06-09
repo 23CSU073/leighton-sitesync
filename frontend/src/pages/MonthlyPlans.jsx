@@ -10,33 +10,53 @@ function MonthlyPlans({ setCurrentPage }) {
 
   const handleUpload = async () => {
 
-    if (!file) {
-      alert("Please select a file first.");
-      return;
-    }
+  if (!file) {
 
-    try {
+    alert("Please select a file first");
+    return;
 
-      const rows = await parseExcelFile(file);
-      const plans =extractMonthlyPlan(rows);
+  }
+
+  try {
+
+    // Read Excel
+    const rows = await parseExcelFile(file);
+
+    console.log("Excel rows:");
+    console.log(rows);
+
+    // Extract useful rows
+    const plans = extractMonthlyPlan(rows);
+
+    console.log("Extracted plans:");
     console.log(plans);
-    for (const plan of plans){
-        await addMonthlyPlan(plan);
+
+    console.log("Total plans =", plans.length);
+
+    // Save into Firestore
+    for (const plan of plans) {
+
+      console.log("Saving:", plan);
+
+      await addMonthlyPlan(plan);
+
     }
+
     setUploaded(true);
 
-      alert(`${rows.length} records uploaded successfully`);
-      setUploaded(true);
+    alert("Monthly Plan Uploaded Successfully");
 
-    } catch (error) {
+  }
 
-      console.error(error);
+  catch (error) {
 
-      alert("Failed to read Excel file.");
+    console.error(error);
 
-    }
+    alert("Upload Failed");
 
-  };
+  }
+
+};
 
   return (
     <div className="min-h-screen bg-slate-100 p-5">

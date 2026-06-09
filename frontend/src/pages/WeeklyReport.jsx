@@ -3,12 +3,7 @@ import { useEffect, useState } from "react";
 import { getWeeklyData } from "../services/weeklyReportService";
 
 function WeeklyReport({ setCurrentPage }) {
-  const [weeklyData, setWeeklyData] = useState({
-    totalPlan: 0,
-    totalAchieved: 0,
-    percentage: 0,
-    balance: 0,
-  });
+  const [weeklyData, setWeeklyData] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -23,8 +18,16 @@ function WeeklyReport({ setCurrentPage }) {
     fetchData();
   }, []);
 
-  const { totalPlan, totalAchieved, percentage, balance } = weeklyData;
-  const shortfall = totalAchieved - totalPlan;
+  if (!weeklyData) {
+    return (
+      <div className="min-h-screen flex justify-center items-center">
+        <h1 className="text-2xl font-bold">Loading Weekly Report...</h1>
+      </div>
+    );
+  }
+
+  const { totalPlan, totalAchieved, percentage, balance, weeklyRows = [] } = weeklyData;
+  const shortfall = Number((totalAchieved - totalPlan).toFixed(1));
 
   return (
     <div className="min-h-screen bg-slate-100 p-5">
@@ -35,54 +38,54 @@ function WeeklyReport({ setCurrentPage }) {
         {"<- Back"}
       </button>
 
-      <h1 className="text-4xl font-bold mb-8">
-        Weekly Report
-      </h1>
+      <h1 className="text-4xl font-bold mb-8">Weekly Report</h1>
 
       <div className="bg-white p-6 rounded-xl shadow mb-8">
-        <h2 className="text-2xl font-bold mb-4">
-          Week 1 Progress
-        </h2>
+        <h2 className="text-2xl font-bold mb-4">Week 1 Progress</h2>
 
         <table className="w-full border">
           <thead className="bg-yellow-100">
             <tr>
-              <th className="border p-3">
-                Location
-              </th>
-              <th className="border p-3">
-                Plan FTW
-              </th>
-              <th className="border p-3">
-                Achieved
-              </th>
-              <th className="border p-3">
-                % Achv
-              </th>
-              <th className="border p-3">
-                Weekly Shortfall
-              </th>
+              <th className="border p-3">Location</th>
+              <th className="border p-3">Plan FTW</th>
+              <th className="border p-3">Achieved</th>
+              <th className="border p-3">% Achv</th>
+              <th className="border p-3">Weekly Shortfall</th>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td className="border p-3 font-semibold">
-                Total
-              </td>
-              <td className="border p-3">
-                {totalPlan}
-              </td>
-              <td className="border p-3">
-                {totalAchieved}
-              </td>
-              <td className="border p-3">
-                {percentage}%
-              </td>
+            {weeklyRows.length > 0 ? (
+              weeklyRows.map((row) => (
+                <tr key={row.location}>
+                  <td className="border p-3 font-semibold">{row.location}</td>
+                  <td className="border p-3">{row.plan}</td>
+                  <td className="border p-3">{row.achieved}</td>
+                  <td className="border p-3">{row.percentage}%</td>
+                  <td
+                    className={`border p-3 font-bold ${
+                      row.shortfall >= 0 ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
+                    {row.shortfall}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td className="border p-3" colSpan={5}>
+                  No weekly data available yet.
+                </td>
+              </tr>
+            )}
+
+            <tr className="bg-green-100 font-bold">
+              <td className="border p-3">Total</td>
+              <td className="border p-3">{totalPlan}</td>
+              <td className="border p-3">{totalAchieved}</td>
+              <td className="border p-3">{percentage}%</td>
               <td
-                className={`border p-3 font-bold ${
-                  shortfall >= 0
-                    ? "text-green-600"
-                    : "text-red-600"
+                className={`border p-3 ${
+                  shortfall >= 0 ? "text-green-600" : "text-red-600"
                 }`}
               >
                 {shortfall}
@@ -93,76 +96,42 @@ function WeeklyReport({ setCurrentPage }) {
       </div>
 
       <div className="bg-white p-6 rounded-xl shadow mb-8">
-        <h2 className="text-2xl font-bold mb-4">
-          Look Ahead
-        </h2>
+        <h2 className="text-2xl font-bold mb-4">Look Ahead</h2>
 
-        <div className="grid grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div className="bg-blue-600 text-white p-5 rounded-xl text-center">
-            <h3 className="text-xl font-bold">
-              Week 2
-            </h3>
-            <p className="mt-3 text-3xl">
-              3628
-            </p>
+            <h3 className="text-xl font-bold">Week 2</h3>
+            <p className="mt-3 text-3xl">3628</p>
           </div>
-
           <div className="bg-blue-600 text-white p-5 rounded-xl text-center">
-            <h3 className="text-xl font-bold">
-              Week 3
-            </h3>
-            <p className="mt-3 text-3xl">
-              2924
-            </p>
+            <h3 className="text-xl font-bold">Week 3</h3>
+            <p className="mt-3 text-3xl">2924</p>
           </div>
-
           <div className="bg-blue-600 text-white p-5 rounded-xl text-center">
-            <h3 className="text-xl font-bold">
-              Week 4
-            </h3>
-            <p className="mt-3 text-3xl">
-              6837
-            </p>
+            <h3 className="text-xl font-bold">Week 4</h3>
+            <p className="mt-3 text-3xl">6837</p>
           </div>
         </div>
       </div>
 
       <div className="bg-white p-6 rounded-xl shadow">
-        <h2 className="text-2xl font-bold mb-4">
-          Summary for Month
-        </h2>
+        <h2 className="text-2xl font-bold mb-4">Summary for Month</h2>
 
         <table className="w-full border">
           <thead className="bg-green-100">
             <tr>
-              <th className="border p-3">
-                Plan
-              </th>
-              <th className="border p-3">
-                Achieved
-              </th>
-              <th className="border p-3">
-                % Achv
-              </th>
-              <th className="border p-3">
-                Balance
-              </th>
+              <th className="border p-3">Plan</th>
+              <th className="border p-3">Achieved</th>
+              <th className="border p-3">% Achv</th>
+              <th className="border p-3">Balance</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td className="border p-3">
-                {totalPlan}
-              </td>
-              <td className="border p-3">
-                {totalAchieved}
-              </td>
-              <td className="border p-3">
-                {percentage}%
-              </td>
-              <td className="border p-3">
-                {balance}
-              </td>
+              <td className="border p-3">{totalPlan}</td>
+              <td className="border p-3">{totalAchieved}</td>
+              <td className="border p-3">{percentage}%</td>
+              <td className="border p-3">{balance}</td>
             </tr>
           </tbody>
         </table>

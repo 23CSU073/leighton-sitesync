@@ -1,52 +1,72 @@
-export const extractMonthlyPlan = (rows) => {
+const getCell = (row, index) => row?.[index] ?? null;
 
+const getMonthlyTotal = (row) => {
+  const candidateIndexes = [38, 39, 40];
+
+  for (const index of candidateIndexes) {
+    const value = Number(getCell(row, index));
+    if (Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+
+  return 0;
+};
+
+export const extractMonthlyPlan = (rows) => {
   let currentTower = "";
   let currentLevel = "";
-
   const plans = [];
+  const seen = new Set();
 
   rows.forEach((row) => {
+    const towerCell = getCell(row, 3);
+    const levelCell = getCell(row, 4);
+    const pourCell = getCell(row, 5);
+    const rowType = getCell(row, 6);
+    const activityCell = getCell(row, 7);
 
-    // Update tower memory
-    if (row.__EMPTY_3) {
-      currentTower = row.__EMPTY_3;
+    if (towerCell && typeof towerCell === "string" && towerCell.startsWith("Tower")) {
+      currentTower = towerCell.trim();
     }
 
-    // Update level memory
-    if (row.__EMPTY_4) {
-      currentLevel = row.__EMPTY_4;
+    if (towerCell === "PCC" || towerCell === "NTA" || towerCell === "Central NTA") {
+      currentTower = towerCell.trim();
     }
 
-    const pour = row.__EMPTY_5;
-    const activity = row.__EMPTY_7;
-
-    // Quantity is usually stored in cumulative column
-    const quantity = Number(row.__EMPTY_37);
-
-    if (
-      currentTower &&
-      currentLevel &&
-      pour &&
-      activity &&
-      quantity > 0
-    ) {
-
-      plans.push({
-        month: "June 2026",
-
-        tower: currentTower,
-
-        level: currentLevel,
-
-        pour,
-
-        activity,
-
-        plannedQuantity: quantity
-      });
-
+    if (levelCell && typeof levelCell === "string") {
+      currentLevel = levelCell.trim();
     }
 
+    if (rowType !== "Plan") {
+      return;
+    }
+
+    const quantity = getMonthlyTotal(row);
+    const pour = pourCell ? String(pourCell).trim() : "";
+    const activity = activityCell ? String(activityCell).trim() : "";
+    const signature = [
+      currentTower,
+      currentLevel,
+      pour,
+      activity,
+      quantity,
+    ].join("|");
+
+    if (!currentTower || !currentLevel || !pour || quantity <= 0 || seen.has(signature)) {
+      return;
+    }
+
+    seen.add(signature);
+
+    plans.push({
+      month: "June 2026",
+      tower: currentTower,
+      level: currentLevel,
+      pour,
+      activity,
+      plannedQuantity: quantity,
+    });
   });
 
   return plans;

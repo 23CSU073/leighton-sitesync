@@ -1,78 +1,73 @@
-export const extractActualTracking = (rows) => {
+const getCell = (row, index) => row?.[index] ?? null;
 
+const getMonthlyTotal = (row) => {
+  const candidateIndexes = [38, 39, 40];
+
+  for (const index of candidateIndexes) {
+    const value = Number(getCell(row, index));
+    if (Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+
+  return 0;
+};
+
+export const extractActualTracking = (rows) => {
   let currentTower = "";
   let currentLevel = "";
-  let currentPour = "";
-
   const actualRows = [];
+  const seen = new Set();
 
   rows.forEach((row) => {
+    const towerCell = getCell(row, 3);
+    const levelCell = getCell(row, 4);
+    const pourCell = getCell(row, 5);
+    const rowType = getCell(row, 6);
+    const activityCell = getCell(row, 7);
 
-    // Remember tower
-    if (row.Unnamed_4 || row["Unnamed: 4"]) {
-      currentTower = row.Unnamed_4 || row["Unnamed: 4"];
+    if (towerCell && typeof towerCell === "string" && towerCell.startsWith("Tower")) {
+      currentTower = towerCell.trim();
     }
 
-    // Remember level
-    if (row.Unnamed_5 || row["Unnamed: 5"]) {
-      currentLevel = row.Unnamed_5 || row["Unnamed: 5"];
+    if (towerCell === "PCC" || towerCell === "NTA" || towerCell === "Central NTA") {
+      currentTower = towerCell.trim();
     }
 
-    // Remember pour
-    if (row.Unnamed_6 || row["Unnamed: 6"]) {
-      currentPour = row.Unnamed_6 || row["Unnamed: 6"];
+    if (levelCell && typeof levelCell === "string") {
+      currentLevel = levelCell.trim();
     }
 
-    // Only Actual rows
-    if (
-      row.Unnamed_7 !== "Actual" &&
-      row["Unnamed: 7"] !== "Actual"
-    ) {
+    if (rowType !== "Actual") {
       return;
     }
 
-    const activity =
-      row.Unnamed_8 ||
-      row["Unnamed: 8"] ||
-      "Concrete";
+    const quantity = getMonthlyTotal(row);
+    const pour = pourCell ? String(pourCell).trim() : "";
+    const activity = activityCell ? String(activityCell).trim() : "Concrete";
+    const signature = [
+      currentTower,
+      currentLevel,
+      pour,
+      activity,
+      quantity,
+    ].join("|");
 
-    Object.keys(row).forEach((key) => {
+    if (!currentTower || !currentLevel || quantity <= 0 || seen.has(signature)) {
+      return;
+    }
 
-      if (
-        typeof row[key] === "number" &&
-        row[key] > 0
-      ) {
+    seen.add(signature);
 
-        if (
-          currentTower &&
-          currentLevel &&
-          currentPour
-        ) {
-
-          actualRows.push({
-
-            month: "June 2026",
-
-            tower: currentTower,
-
-            level: currentLevel,
-
-            pour: currentPour,
-
-            activity,
-
-            actualQuantity: row[key]
-
-          });
-
-        }
-
-      }
-
+    actualRows.push({
+      month: "June 2026",
+      tower: currentTower,
+      level: currentLevel,
+      pour,
+      activity,
+      actualQuantity: quantity,
     });
-
   });
 
   return actualRows;
-
 };
