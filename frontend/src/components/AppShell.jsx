@@ -2,6 +2,7 @@ import LeightonLogo from "./LeightonLogo";
 
 const navItems = [
   { page: "dashboard", label: "Dashboard" },
+  { page: "daily-progress", label: "Daily Progress" },
   { page: "monthly-plans", label: "Monthly Planning" },
   { page: "actual-upload", label: "Actual Track Upload" },
   { page: "weekly-report", label: "Weekly Progress" },
