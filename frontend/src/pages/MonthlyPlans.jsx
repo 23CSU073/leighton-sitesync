@@ -1,120 +1,213 @@
-import { addMonthlyPlan } from "../services/monthlyPlanService";
-import {extractMonthlyPlan} from "../utils/extractMonthlyPlan";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
 import { parseExcelFile } from "../utils/excelParser";
+import { extractMonthlyPlan } from "../utils/extractMonthlyPlan";
+import { subscribeToMonthlyPlans, uploadMonthlyPlanner } from "../services/monthlyPlanService";
 
-function MonthlyPlans({ setCurrentPage }) {
+const currentDate = new Date();
 
-  const [file, setFile] = useState(null);
-  const [uploaded, setUploaded] = useState(false);
+const getPlanStatus = (plan) => plan.status || "active";
 
-  const handleUpload = async () => {
-
-  if (!file) {
-
-    alert("Please select a file first");
-    return;
-
+const getPlanDate = (plan) => {
+  if (Number.isFinite(Number(plan.month)) && Number.isFinite(Number(plan.year))) {
+    return {
+      month: Number(plan.month),
+      year: Number(plan.year),
+    };
   }
 
-  try {
+  const date = new Date(`${plan.monthLabel || plan.month || ""} 1`);
 
-    // Read Excel
-    const rows = await parseExcelFile(file);
-
-    console.log("Excel rows:");
-    console.log(rows);
-
-    // Extract useful rows
-    const plans = extractMonthlyPlan(rows);
-
-    console.log("Extracted plans:");
-    console.log(plans);
-
-    console.log("Total plans =", plans.length);
-
-    // Save into Firestore
-    for (const plan of plans) {
-
-      console.log("Saving:", plan);
-
-      await addMonthlyPlan(plan);
-
-    }
-
-    setUploaded(true);
-
-    alert("Monthly Plan Uploaded Successfully");
-
+  if (!Number.isNaN(date.getTime())) {
+    return {
+      month: date.getMonth() + 1,
+      year: date.getFullYear(),
+    };
   }
 
-  catch (error) {
-
-    console.error(error);
-
-    alert("Upload Failed");
-
-  }
-
+  return {
+    month: "",
+    year: "",
+  };
 };
 
-  return (
-    <div className="min-h-screen bg-slate-100 p-5">
+const getPlanMonthKey = (plan) => {
+  if (plan.planMonthKey || plan.planId) {
+    return plan.planMonthKey || plan.planId;
+  }
 
-      <button
-        onClick={() => setCurrentPage("home")}
-        className="mb-5 bg-gray-200 px-4 py-2 rounded-lg"
-      >
-        ← Back
-      </button>
+  const planDate = getPlanDate(plan);
 
-      <h1 className="text-4xl font-bold mb-8">
-        Monthly Plans
-      </h1>
+  return `${planDate.year}-${String(planDate.month).padStart(2, "0")}`;
+};
 
-      <div className="bg-white p-6 rounded-xl shadow">
+function MonthlyPlans() {
+  const [file, setFile] = useState(null);
+  const [month, setMonth] = useState(currentDate.getMonth() + 1);
+  const [year, setYear] = useState(currentDate.getFullYear());
+  const [plans, setPlans] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState("");
 
-        <p className="text-xl font-semibold mb-5">
-          Upload Monthly Planner
-        </p>
+  useEffect(() => {
+    const unsubscribe = subscribeToMonthlyPlans(setPlans);
 
-        <input
-          type="file"
-          accept=".xlsx,.xls"
-          onChange={(e) =>
-            setFile(e.target.files[0])
-          }
-        />
+    return () => unsubscribe();
+  }, []);
 
-        <button
-  onClick={handleUpload}
-  className={`mt-5 w-full text-white p-4 rounded-xl font-semibold ${
-    uploaded
-      ? "bg-green-600"
-      : "bg-orange-500"
-  }`}
->
-  {uploaded
-    ? "✓ Uploaded Successfully"
-    : "Upload Plan"}
-</button>
+  const planGroups = useMemo(() => {
+    const grouped = plans.reduce((groups, plan) => {
+      const status = getPlanStatus(plan);
+      const planDate = getPlanDate(plan);
+      const key = getPlanMonthKey(plan);
 
-        {file && (
-          <div className="mt-5">
+      groups[key] = groups[key] || {
+        ...plan,
+        ...planDate,
+        status,
+        planMonthKey: key,
+        rowCount: 0,
+        totalPlanned: 0,
+      };
+      groups[key].rowCount += 1;
+      groups[key].totalPlanned += Number(plan.plannedQuantity || 0);
 
-            <p>
-              Selected File:
-            </p>
+      return groups;
+    }, {});
 
-            <p className="font-bold">
-              {file.name}
-            </p>
+    return Object.values(grouped);
+  }, [plans]);
 
-          </div>
-        )}
+  const activePlans = planGroups.filter((plan) => getPlanStatus(plan) === "active");
+  const previousPlans = planGroups.filter((plan) => getPlanStatus(plan) === "archived");
 
+  const handleUpload = async () => {
+    if (!file) {
+      setMessage("Please select a file first.");
+      return;
+    }
+
+    try {
+      setUploading(true);
+      setMessage("");
+      const rows = await parseExcelFile(file);
+      const extractedPlans = extractMonthlyPlan(rows);
+
+      if (extractedPlans.length === 0) {
+        setMessage("No monthly planning rows were found in this workbook.");
+        return;
+      }
+
+      await uploadMonthlyPlanner({
+        rows: extractedPlans,
+        month,
+        year,
+        uploadedBy: "Admin",
+        fileName: file.name,
+      });
+
+      setFile(null);
+      setMessage("Monthly planner uploaded. This month replaced any previous upload for the same month/year.");
+    } catch (error) {
+      console.error(error);
+      setMessage("Upload failed. Please check the Excel format and try again.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const renderPlanCard = (plan) => (
+    <div className="rounded-lg bg-white p-5 shadow">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-sm font-semibold uppercase text-slate-500">
+            {getPlanStatus(plan) === "active" ? "Active Plan" : "Previous Plan"}
+          </p>
+          <h2 className="mt-1 text-2xl font-bold">
+            {plan.month}/{plan.year}
+          </h2>
+          <p className="mt-1 text-slate-600">{plan.fileName || "Excel planner"}</p>
+        </div>
+        <span className="rounded-full bg-slate-900 px-3 py-1 text-sm font-semibold text-white">
+          {getPlanStatus(plan)}
+        </span>
       </div>
+      <div className="mt-5 grid grid-cols-2 gap-3">
+        <div className="rounded-lg bg-slate-100 p-3">
+          <p className="text-sm text-slate-600">Rows</p>
+          <p className="text-2xl font-bold">{plan.rowCount}</p>
+        </div>
+        <div className="rounded-lg bg-slate-100 p-3">
+          <p className="text-sm text-slate-600">Planned Quantity</p>
+          <p className="text-2xl font-bold">{plan.totalPlanned.toFixed(1)} Cum</p>
+        </div>
+      </div>
+      {plan.fileUrl && (
+        <a className="mt-4 inline-block font-semibold text-blue-700" href={plan.fileUrl}>
+          Download
+        </a>
+      )}
+    </div>
+  );
 
+  return (
+    <div className="space-y-6">
+      <section className="rounded-lg bg-white p-5 shadow">
+        <h2 className="text-2xl font-bold">Upload Monthly Planner</h2>
+        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-4">
+          <input
+            type="number"
+            min="1"
+            max="12"
+            className="rounded-lg border p-3"
+            value={month}
+            onChange={(event) => setMonth(Number(event.target.value))}
+          />
+          <input
+            type="number"
+            min="2024"
+            className="rounded-lg border p-3"
+            value={year}
+            onChange={(event) => setYear(Number(event.target.value))}
+          />
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            className="rounded-lg border p-3 md:col-span-2"
+            onChange={(event) => setFile(event.target.files[0])}
+          />
+        </div>
+        <button
+          onClick={handleUpload}
+          disabled={uploading}
+          className="mt-5 w-full rounded-lg bg-orange-600 p-4 font-semibold text-white"
+        >
+          {uploading ? "Uploading..." : "Upload Plan"}
+        </button>
+        {message && <p className="mt-4 rounded-lg bg-slate-100 p-4 font-semibold">{message}</p>}
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-2xl font-bold">Active Plans</h2>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {activePlans.length > 0 ? activePlans.map((plan) => (
+          <div key={plan.planMonthKey || plan.planId || plan.id}>{renderPlanCard(plan)}</div>
+        )) : (
+          <div className="rounded-lg bg-white p-5 shadow">No active plan uploaded yet.</div>
+        )}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-2xl font-bold">Previous Plans</h2>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {previousPlans.length > 0 ? previousPlans.map((plan) => (
+            <div key={plan.planId || plan.id}>{renderPlanCard(plan)}</div>
+          )) : (
+            <div className="rounded-lg bg-white p-5 shadow">No archived plans yet.</div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }

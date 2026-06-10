@@ -1,30 +1,29 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+
+import { addProgress, subscribeToProgress } from "../services/dprService";
 import {
-  addProgress,
-  subscribeToProgress,
-} from "../services/dprService";
+  getAreas,
+  getLevelsForTower,
+  getPoursForTower,
+  getTowersForArea,
+} from "../data/towerConfig";
 
-import { towers } from "../data/towers";
-import { levels } from "../data/levels";
-import { cores } from "../data/cores";
+const initialFormData = () => ({
+  date: new Date().toISOString().split("T")[0],
+  area: "",
+  tower: "",
+  level: "",
+  pour: "",
+  shift: "",
+  activity: "",
+  quantity: "",
+});
 
-function DailyProgress({ setCurrentPage }) {
-  const [formData, setFormData] = useState({
-    date: new Date().toISOString().split("T")[0],
-
-    tower: "",
-    level: "",
-    core: "",
-
-    shift: "",
-
-    activity: "",
-    quantity: "",
-  });
-
+function DailyProgress() {
+  const [formData, setFormData] = useState(initialFormData);
   const [progressList, setProgressList] = useState([]);
+  const [saving, setSaving] = useState(false);
 
-  // Real-time listener
   useEffect(() => {
     const unsubscribe = subscribeToProgress((data) => {
       setProgressList(data);
@@ -33,310 +32,208 @@ function DailyProgress({ setCurrentPage }) {
     return () => unsubscribe();
   }, []);
 
-  // KPI Card
   const totalConcreteToday = progressList.reduce(
     (total, item) => total + Number(item.quantity || 0),
     0
   );
 
-  // Submit
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setSaving(true);
 
     const newEntry = {
       date: formData.date,
-
       engineerName: "Site Engineer",
-
+      area: formData.area,
       tower: formData.tower,
       level: formData.level,
-      core: formData.core,
-
+      pour: formData.pour,
+      core: formData.pour,
       shift: formData.shift,
-
       activity: formData.activity,
-
       quantity: Number(formData.quantity),
     };
 
     const success = await addProgress(newEntry);
+    setSaving(false);
 
     if (success) {
-      alert("Progress Saved to Firestore");
-
-      setFormData({
-        date: new Date().toISOString().split("T")[0],
-
-        tower: "",
-        level: "",
-        core: "",
-
-        shift: "",
-
-        activity: "",
-        quantity: "",
-      });
-    } else {
-      alert("Failed to Save Progress");
+      setFormData(initialFormData());
+      return;
     }
+
+    alert("Failed to save progress");
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 p-5">
-
-      {/* Back Button */}
-      <button
-        onClick={() => setCurrentPage("home")}
-        className="mb-5 bg-gray-200 px-4 py-2 rounded-lg"
-      >
-        ← Back
-      </button>
-
-      {/* Title */}
-      <h1 className="text-4xl font-bold mb-8">
-        Daily Progress
-      </h1>
-
-      {/* Form */}
+    <>
       <form
         onSubmit={handleSubmit}
-        className="space-y-5"
+        className="grid grid-cols-1 gap-5 rounded-lg bg-white p-5 shadow md:grid-cols-2"
       >
-
-        {/* Date */}
-        <div>
-          <label className="block mb-2 font-semibold">
-            Date
-          </label>
-
+        <label className="block">
+          <span className="mb-2 block font-semibold">Date</span>
           <input
             type="date"
-            className="w-full p-4 rounded-xl border bg-white"
+            className="w-full rounded-lg border bg-white p-4"
             value={formData.date}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                date: e.target.value,
-              })
-            }
+            onChange={(event) => setFormData({ ...formData, date: event.target.value })}
           />
-        </div>
+        </label>
 
-        {/* Shift */}
-        <div>
-          <label className="block mb-2 font-semibold">
-            Shift
-          </label>
-
+        <label className="block">
+          <span className="mb-2 block font-semibold">Shift</span>
           <select
-            className="w-full p-4 rounded-xl border bg-white"
+            className="w-full rounded-lg border bg-white p-4"
             value={formData.shift}
-            onChange={(e) =>
+            onChange={(event) => setFormData({ ...formData, shift: event.target.value })}
+          >
+            <option value="">Select Shift</option>
+            <option value="Day">Day Shift</option>
+            <option value="Night">Night Shift</option>
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block font-semibold">Area</span>
+          <select
+            className="w-full rounded-lg border bg-white p-4"
+            value={formData.area}
+            onChange={(event) =>
               setFormData({
                 ...formData,
-                shift: e.target.value,
+                area: event.target.value,
+                tower: "",
+                level: "",
+                pour: "",
               })
             }
           >
-            <option value="">
-              Select Shift
-            </option>
-
-            <option value="Day">
-              Day Shift
-            </option>
-
-            <option value="Night">
-              Night Shift
-            </option>
+            <option value="">Select Area</option>
+            {getAreas().map((area) => (
+              <option key={area} value={area}>
+                {area}
+              </option>
+            ))}
           </select>
-        </div>
+        </label>
 
-        {/* Tower */}
-        <select
-          className="w-full p-4 rounded-xl border bg-white"
-          value={formData.tower}
-          onChange={(e) =>
-            setFormData({
-              ...formData,
-              tower: e.target.value,
-            })
-          }
-        >
-          <option value="">
-            Select Tower
-          </option>
+        <label className="block">
+          <span className="mb-2 block font-semibold">Tower</span>
+          <select
+            className="w-full rounded-lg border bg-white p-4"
+            value={formData.tower}
+            disabled={!formData.area}
+            onChange={(event) =>
+              setFormData({
+                ...formData,
+                tower: event.target.value,
+                level: "",
+                pour: "",
+              })
+            }
+          >
+            <option value="">Select Tower</option>
+            {getTowersForArea(formData.area).map((tower) => (
+              <option key={tower} value={tower}>
+                {tower}
+              </option>
+            ))}
+          </select>
+        </label>
 
-          {towers.map((tower) => (
-            <option
-              key={tower}
-              value={tower}
-            >
-              {tower}
-            </option>
-          ))}
-        </select>
+        <label className="block">
+          <span className="mb-2 block font-semibold">Level</span>
+          <select
+            className="w-full rounded-lg border bg-white p-4"
+            value={formData.level}
+            disabled={!formData.tower}
+            onChange={(event) =>
+              setFormData({ ...formData, level: event.target.value, pour: "" })
+            }
+          >
+            <option value="">Select Level</option>
+            {getLevelsForTower(formData.tower).map((level) => (
+              <option key={level} value={level}>
+                {level}
+              </option>
+            ))}
+          </select>
+        </label>
 
-        {/* Level */}
-        <select
-          className="w-full p-4 rounded-xl border bg-white"
-          value={formData.level}
-          onChange={(e) =>
-            setFormData({
-              ...formData,
-              level: e.target.value,
-            })
-          }
-        >
-          <option value="">
-            Select Level
-          </option>
+        <label className="block">
+          <span className="mb-2 block font-semibold">Pour</span>
+          <select
+            className="w-full rounded-lg border bg-white p-4"
+            value={formData.pour}
+            disabled={!formData.level}
+            onChange={(event) => setFormData({ ...formData, pour: event.target.value })}
+          >
+            <option value="">Select Pour</option>
+            {getPoursForTower(formData.tower).map((pour) => (
+              <option key={pour} value={pour}>
+                {pour}
+              </option>
+            ))}
+          </select>
+        </label>
 
-          {levels.map((level) => (
-            <option
-              key={level}
-              value={level}
-            >
-              {level}
-            </option>
-          ))}
-        </select>
-
-        {/* Core */}
-        <select
-          className="w-full p-4 rounded-xl border bg-white"
-          value={formData.core}
-          onChange={(e) =>
-            setFormData({
-              ...formData,
-              core: e.target.value,
-            })
-          }
-        >
-          <option value="">
-            Select Core
-          </option>
-
-          {cores.map((core) => (
-            <option
-              key={core}
-              value={core}
-            >
-              {core}
-            </option>
-          ))}
-        </select>
-
-        {/* Activity */}
         <input
           type="text"
           placeholder="Enter Activity"
-          className="w-full p-4 rounded-xl border bg-white"
+          className="w-full rounded-lg border bg-white p-4"
           value={formData.activity}
-          onChange={(e) =>
-            setFormData({
-              ...formData,
-              activity: e.target.value,
-            })
-          }
+          onChange={(event) => setFormData({ ...formData, activity: event.target.value })}
         />
 
-        {/* Quantity */}
         <div>
           <input
             type="number"
             placeholder="Concrete Quantity (Cum)"
-            className="w-full p-4 rounded-xl border bg-white"
+            className="w-full rounded-lg border bg-white p-4"
             value={formData.quantity}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                quantity: e.target.value,
-              })
-            }
+            onChange={(event) => setFormData({ ...formData, quantity: event.target.value })}
           />
-
-          <p className="text-sm text-blue-600 font-semibold mt-2">
-            Unit: Cum
-          </p>
+          <p className="mt-2 text-sm font-semibold text-blue-600">Unit: Cum</p>
         </div>
 
-        {/* Submit */}
         <button
           type="submit"
-          className="w-full bg-green-600 text-white p-4 rounded-xl text-xl font-semibold"
+          disabled={saving}
+          className="w-full rounded-lg bg-green-600 p-4 text-xl font-semibold text-white md:col-span-2"
         >
-          Submit Progress
+          {saving ? "Saving..." : "Submit Progress"}
         </button>
-
       </form>
 
-      {/* KPI Card */}
-      <div className="mt-10 bg-green-600 text-white p-5 rounded-xl shadow">
-        <p className="text-sm">
-          Total Concrete Progress
-        </p>
-
-        <h2 className="text-4xl font-bold mt-2">
-          {totalConcreteToday} Cum
-        </h2>
+      <div className="mt-6 rounded-lg bg-green-600 p-5 text-white shadow">
+        <p className="text-sm">Total Concrete Progress</p>
+        <h2 className="mt-2 text-4xl font-bold">{totalConcreteToday} Cum</h2>
       </div>
 
-      {/* Progress Ledger */}
       <div className="mt-8">
-        <h2 className="text-2xl font-bold mb-4">
-          Today's Progress
-        </h2>
-
+        <h2 className="mb-4 text-2xl font-bold">Today's Progress</h2>
         {progressList.length === 0 ? (
-          <div className="bg-white p-4 rounded-xl shadow">
-            No progress submitted yet.
-          </div>
+          <div className="rounded-lg bg-white p-4 shadow">No progress submitted yet.</div>
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {progressList.map((item) => (
-              <div
-                key={item.id}
-                className="bg-white p-4 rounded-xl shadow"
-              >
-                <p>
-                  <strong>Date:</strong> {item.date}
-                </p>
-
-                <p>
-                  <strong>Engineer:</strong> {item.engineerName}
-                </p>
-
-                <p>
-                  <strong>Tower:</strong> {item.tower}
-                </p>
-
-                <p>
-                  <strong>Level:</strong> {item.level}
-                </p>
-
-                <p>
-                  <strong>Core:</strong> {item.core}
-                </p>
-
-                <p>
-                  <strong>Shift:</strong> {item.shift}
-                </p>
-
-                <p>
-                  <strong>Activity:</strong> {item.activity}
-                </p>
-
-                <p>
-                  <strong>Quantity:</strong> {item.quantity} Cum
-                </p>
+              <div key={item.id} className="rounded-lg bg-white p-4 shadow">
+                <p><strong>Date:</strong> {item.date}</p>
+                <p><strong>Engineer:</strong> {item.engineerName}</p>
+                <p><strong>Area:</strong> {item.area || "Not set"}</p>
+                <p><strong>Tower:</strong> {item.tower}</p>
+                <p><strong>Level:</strong> {item.level}</p>
+                <p><strong>Pour:</strong> {item.pour || item.core}</p>
+                <p><strong>Shift:</strong> {item.shift}</p>
+                <p><strong>Activity:</strong> {item.activity}</p>
+                <p><strong>Quantity:</strong> {item.quantity} Cum</p>
               </div>
             ))}
           </div>
         )}
       </div>
-
-    </div>
+    </>
   );
 }
 

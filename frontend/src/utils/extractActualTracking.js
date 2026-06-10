@@ -1,42 +1,32 @@
-const getCell = (row, index) => row?.[index] ?? null;
+import {
+  buildWeeklyValues,
+  findConcreteWorkbookLayout,
+  getCell,
+  getRowTotal,
+  isRealLevelName,
+  isRealTowerName,
+  isSpecialAreaName,
+} from "./concreteWorkbook.js";
 
-const isRealTowerName = (value) =>
-  typeof value === "string" &&
-  /^(Tower\s*\d+|PCC|NTA|Central NTA)$/i.test(value.trim());
-
-const isRealLevelName = (value) =>
-  typeof value === "string" &&
-  !/^(Level|Tower|Plan|Actual|S\.No\.|Elements\/Pours|Elements)$/i.test(value.trim());
-
-const isSpecialAreaName = (value) =>
-  typeof value === "string" &&
-  /^(PCC|NTA|Central NTA)$/i.test(value.trim());
-
-const getQuantity = (row) => {
-  const candidateIndexes = [38, 39, 40];
-
-  for (const index of candidateIndexes) {
-    const value = Number(getCell(row, index));
-    if (Number.isFinite(value) && value > 0) {
-      return value;
-    }
-  }
-
-  return 0;
-};
+const isConcreteActivity = (value) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase() === "concrete";
 
 export const extractActualTracking = (rows) => {
   let currentTower = "";
   let currentLevel = "";
   const actualRows = [];
   const seen = new Set();
+  const layout = findConcreteWorkbookLayout(rows);
+  const { columns } = layout;
 
   rows.forEach((row) => {
-    const towerCell = getCell(row, 3);
-    const levelCell = getCell(row, 4);
-    const pourCell = getCell(row, 5);
-    const rowType = getCell(row, 6);
-    const activityCell = getCell(row, 7);
+    const towerCell = getCell(row, columns.tower);
+    const levelCell = getCell(row, columns.level);
+    const pourCell = getCell(row, columns.pour);
+    const rowType = getCell(row, columns.rowType);
+    const activityCell = getCell(row, columns.activity);
 
     if (isRealTowerName(towerCell)) {
       currentTower = String(towerCell).trim();
@@ -51,13 +41,14 @@ export const extractActualTracking = (rows) => {
       currentLevel = String(levelCell).trim();
     }
 
-    if (rowType !== "Actual") {
+    if (String(rowType || "").trim() !== "Actual" || !isConcreteActivity(activityCell)) {
       return;
     }
 
-    const quantity = getQuantity(row);
+    const quantity = getRowTotal(row, layout);
+    const weeklyActual = buildWeeklyValues(row, layout.dateColumns);
     const pour = pourCell ? String(pourCell).trim() : "";
-    const activity = activityCell ? String(activityCell).trim() : "Concrete";
+    const activity = String(activityCell).trim();
     const signature = [
       currentTower,
       currentLevel,
@@ -73,12 +64,14 @@ export const extractActualTracking = (rows) => {
     seen.add(signature);
 
     actualRows.push({
-      month: "June 2026",
+      month: layout.month,
+      monthLabel: layout.month,
       tower: currentTower,
       level: currentLevel,
       pour,
       activity,
       actualQuantity: quantity,
+      weeklyActual,
     });
   });
 
