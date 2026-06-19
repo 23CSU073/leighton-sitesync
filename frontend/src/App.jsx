@@ -5,6 +5,7 @@ import AppShell from "./components/AppShell";
 import DailyProgress from "./pages/DailyProgress";
 import Dashboard from "./pages/Dashboard";
 import Home from "./pages/Home";
+import LogHistory from "./pages/LogHistory";
 import Login from "./pages/Login";
 import MonthlyPlans from "./pages/MonthlyPlans";
 import Reports from "./pages/Reports";
@@ -39,6 +40,9 @@ function App() {
 
       case "daily-progress":
         return <DailyProgress currentUser={currentUser} setCurrentPage={setCurrentPage} />;
+
+      case "log-history":
+        return <LogHistory currentUser={currentUser} setCurrentPage={setCurrentPage} />;
 
       case "monthly-plans":
         return <MonthlyPlans setCurrentPage={setCurrentPage} />;
@@ -96,6 +100,7 @@ function App() {
     reports: "Report Center",
     "site-layout": "Site Layout",
     "daily-progress": "Daily Progress",
+    "log-history": "Log History",
   };
 
   return (
