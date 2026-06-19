@@ -34,7 +34,7 @@ export const subscribeToReasons = (collectionName, callback) => {
   });
 };
 
-export const addReason = async (collectionName, name, createdBy = "system") => {
+export const addReason = async (collectionName, name, createdBy = "system", details = {}) => {
   const trimmedName = String(name || "").trim();
 
   if (!trimmedName) {
@@ -43,6 +43,7 @@ export const addReason = async (collectionName, name, createdBy = "system") => {
 
   const reference = await addDoc(collection(db, collectionName), {
     name: trimmedName,
+    ...details,
     createdBy,
     createdAt: serverTimestamp(),
   });

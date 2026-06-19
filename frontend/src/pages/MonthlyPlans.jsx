@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import { parseExcelFile } from "../utils/excelParser";
 import { extractMonthlyPlan } from "../utils/extractMonthlyPlan";
-import { subscribeToMonthlyPlans, uploadMonthlyPlanner } from "../services/monthlyPlanService";
+import {
+  deleteMonthlyPlanner,
+  subscribeToMonthlyPlans,
+  uploadMonthlyPlanner,
+} from "../services/monthlyPlanService";
 
 const currentDate = new Date();
 
@@ -47,6 +51,7 @@ function MonthlyPlans() {
   const [year, setYear] = useState(currentDate.getFullYear());
   const [plans, setPlans] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [deletingPlanKey, setDeletingPlanKey] = useState("");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -116,6 +121,40 @@ function MonthlyPlans() {
     }
   };
 
+  const handleDeletePlan = async (plan) => {
+    const planKey = plan.planMonthKey || plan.planId;
+
+    if (!planKey) {
+      setMessage("This upload could not be identified for deletion.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete the monthly planner for ${plan.month}/${plan.year}? This removes all rows for this upload.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingPlanKey(planKey);
+      setMessage("");
+      const deleted = await deleteMonthlyPlanner(planKey);
+
+      setMessage(
+        deleted
+          ? "Monthly planner upload deleted."
+          : "Monthly planner could not be deleted. Please try again."
+      );
+    } catch (error) {
+      console.error(error);
+      setMessage("Monthly planner could not be deleted. Please try again.");
+    } finally {
+      setDeletingPlanKey("");
+    }
+  };
+
   const renderPlanCard = (plan) => (
     <div className="rounded-lg bg-white p-5 shadow">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -128,9 +167,19 @@ function MonthlyPlans() {
           </h2>
           <p className="mt-1 text-slate-600">{plan.fileName || "Excel planner"}</p>
         </div>
-        <span className="rounded-full bg-slate-900 px-3 py-1 text-sm font-semibold text-white">
-          {getPlanStatus(plan)}
-        </span>
+        <div className="flex flex-col gap-2 sm:items-end">
+          <span className="rounded-full bg-slate-900 px-3 py-1 text-sm font-semibold text-white">
+            {getPlanStatus(plan)}
+          </span>
+          <button
+            type="button"
+            onClick={() => handleDeletePlan(plan)}
+            disabled={deletingPlanKey === (plan.planMonthKey || plan.planId)}
+            className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {deletingPlanKey === (plan.planMonthKey || plan.planId) ? "Deleting..." : "Delete Upload"}
+          </button>
+        </div>
       </div>
       <div className="mt-5 grid grid-cols-2 gap-3">
         <div className="rounded-lg bg-slate-100 p-3">

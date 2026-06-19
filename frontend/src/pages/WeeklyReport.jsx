@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   addReason,
@@ -7,6 +7,7 @@ import {
   subscribeToReasons,
 } from "../services/reasonService";
 import {
+  ensureWeeklyReportSnapshot,
   saveWeeklyReport,
   subscribeToWeeklyData,
   subscribeToWeeklyReports,
@@ -30,10 +31,13 @@ const getWeekNumber = (label) => {
 
 function WeeklyReport({ currentUser }) {
   const [weeklyData, setWeeklyData] = useState(null);
+  const [selectedWeekIndex, setSelectedWeekIndex] = useState();
+  const [selectedMonthKey, setSelectedMonthKey] = useState("");
   const [shortfallReasons, setShortfallReasons] = useState([]);
   const [riskReasons, setRiskReasons] = useState([]);
   const [savedReports, setSavedReports] = useState([]);
   const [saveMessage, setSaveMessage] = useState("");
+  const autoSavedKeys = useRef(new Set());
   const [formData, setFormData] = useState({
     lookAhead: "",
     monthlySummary: "",
@@ -44,14 +48,35 @@ function WeeklyReport({ currentUser }) {
   });
 
   useEffect(() => {
-    const unsubscribe = subscribeToWeeklyData(setWeeklyData);
+    const unsubscribe = subscribeToWeeklyData(setWeeklyData, {
+      selectedWeekIndex,
+      selectedMonthKey,
+    });
 
     return () => unsubscribe();
-  }, []);
+  }, [selectedWeekIndex, selectedMonthKey]);
 
   useEffect(() => subscribeToReasons("shortfallReasons", setShortfallReasons), []);
   useEffect(() => subscribeToReasons("riskReasons", setRiskReasons), []);
   useEffect(() => subscribeToWeeklyReports(setSavedReports), []);
+
+  useEffect(() => {
+    if (!weeklyData?.selectedMonth) {
+      return;
+    }
+
+    const snapshotKey = `${weeklyData.selectedMonth}-${weeklyData.currentWeekIndex}`;
+
+    if (autoSavedKeys.current.has(snapshotKey)) {
+      return;
+    }
+
+    autoSavedKeys.current.add(snapshotKey);
+    ensureWeeklyReportSnapshot(weeklyData, currentUser?.email || "system").catch((error) => {
+      console.error(error);
+      autoSavedKeys.current.delete(snapshotKey);
+    });
+  }, [weeklyData, currentUser?.email]);
 
   const shortfallOptions = useMemo(
     () => [...new Set([...getDefaultShortfallReasons(), ...shortfallReasons.map((item) => item.name)])],
@@ -75,9 +100,14 @@ function WeeklyReport({ currentUser }) {
     weeklyReportRows = [],
     lookAheadWeeks = [],
     currentWeek = "Week 1",
+    currentWeekIndex = 0,
+    selectedMonth = "",
+    selectedMonthLabel = "",
+    monthOptions = [],
   } = weeklyData;
   const reportRows = weeklyReportRows.length > 0 ? weeklyReportRows : weeklyRows;
   const currentWeekNumber = getWeekNumber(currentWeek);
+  const lookAheadColumnWeeks = [1, 2, 3].map((offset) => currentWeekNumber + offset);
   const shortfall = Number(totalAchieved || 0) - Number(totalPlan || 0);
   const monthPlan = reportRows.reduce(
     (sum, row) => sum + Number(row.monthPlan || row.plannedQuantity || row.plan || 0),
@@ -135,6 +165,9 @@ function WeeklyReport({ currentUser }) {
 
     await saveWeeklyReport({
       week: currentWeek,
+      weekIndex: currentWeekIndex,
+      monthKey: selectedMonth,
+      monthLabel: selectedMonthLabel,
       lookAhead: formData.lookAhead,
       monthlySummary: formData.monthlySummary,
       shortfallReason,
@@ -148,6 +181,41 @@ function WeeklyReport({ currentUser }) {
 
   return (
     <div className="space-y-6">
+      <section className="rounded-lg bg-white p-5 shadow">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold">Weekly Progress Dashboard</h2>
+            <p className="mt-1 text-slate-600">{selectedMonthLabel || "Current reporting month"}</p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <select
+              className="rounded-lg border bg-white p-3 font-semibold"
+              value={selectedMonthKey}
+              onChange={(event) => setSelectedMonthKey(event.target.value)}
+            >
+              <option value="">Current / Latest Month</option>
+              {monthOptions.map((month) => (
+                <option key={month.key} value={month.key}>{month.label}</option>
+              ))}
+            </select>
+            <div className="grid grid-cols-4 overflow-hidden rounded-lg border">
+              {[0, 1, 2, 3].map((weekIndex) => (
+                <button
+                  key={weekIndex}
+                  onClick={() => setSelectedWeekIndex(weekIndex)}
+                  className={`px-3 py-3 text-sm font-semibold ${
+                    currentWeekIndex === weekIndex
+                      ? "bg-slate-900 text-white"
+                      : "bg-white text-slate-700"
+                  }`}
+                >
+                  Week {weekIndex + 1}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
       <section className="rounded-lg bg-white p-4 shadow">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1180px] border border-slate-700 text-center text-xs">
@@ -188,9 +256,11 @@ function WeeklyReport({ currentUser }) {
                 <th className="border border-slate-700 p-2">Achieved</th>
                 <th className="border border-slate-700 p-2">% Achv</th>
                 <th className="border border-slate-700 p-2">Weekly Shortfall (-)</th>
-                <th className="border border-slate-700 p-2">Week 2</th>
-                <th className="border border-slate-700 p-2">Week 3</th>
-                <th className="border border-slate-700 p-2">Week 4</th>
+                {lookAheadColumnWeeks.map((week, index) => (
+                  <th key={`lookahead-heading-${index}`} className="border border-slate-700 p-2">
+                    {week <= 4 ? `Week ${week}` : "-"}
+                  </th>
+                ))}
                 <th className="border border-slate-700 p-2">Plan</th>
                 <th className="border border-slate-700 p-2">Achieved</th>
                 <th className="border border-slate-700 p-2">% Achv</th>
@@ -212,9 +282,11 @@ function WeeklyReport({ currentUser }) {
                     <td className={`border border-slate-700 p-2 font-bold ${row.shortfall < 0 ? "text-red-700" : "text-green-700"}`}>
                       {formatQty(row.shortfall)}
                     </td>
-                    <td className="border border-slate-700 p-2">{currentWeekNumber < 2 ? formatQty(row.weeklyPlan?.[1]) : "-"}</td>
-                    <td className="border border-slate-700 p-2">{currentWeekNumber < 3 ? formatQty(row.weeklyPlan?.[2]) : "-"}</td>
-                    <td className="border border-slate-700 p-2">{currentWeekNumber < 4 ? formatQty(row.weeklyPlan?.[3]) : "-"}</td>
+                    {lookAheadColumnWeeks.map((week, index) => (
+                      <td key={`${row.key || row.location}-lookahead-${index}`} className="border border-slate-700 p-2">
+                        {week <= 4 ? formatQty(row.weeklyPlan?.[week - 1]) : "-"}
+                      </td>
+                    ))}
                     <td className="border border-slate-700 p-2">{formatQty(rowMonthPlan)}</td>
                     <td className="border border-slate-700 p-2">{formatQty(rowMonthAchieved)}</td>
                     <td className="border border-slate-700 p-2">{getPercent(rowMonthAchieved, rowMonthPlan)}</td>
@@ -236,9 +308,11 @@ function WeeklyReport({ currentUser }) {
                 <td className={`border border-slate-700 p-2 ${shortfall < 0 ? "text-red-700" : "text-green-700"}`}>
                   {formatQty(shortfall)}
                 </td>
-                <td className="border border-slate-700 p-2">{formatQty(lookAheadByWeek[2])}</td>
-                <td className="border border-slate-700 p-2">{formatQty(lookAheadByWeek[3])}</td>
-                <td className="border border-slate-700 p-2">{formatQty(lookAheadByWeek[4])}</td>
+                {lookAheadColumnWeeks.map((week, index) => (
+                  <td key={`total-lookahead-${index}`} className="border border-slate-700 p-2">
+                    {week <= 4 ? formatQty(lookAheadByWeek[week]) : "-"}
+                  </td>
+                ))}
                 <td className="border border-slate-700 p-2">{formatQty(monthPlan || totalPlan)}</td>
                 <td className="border border-slate-700 p-2">{formatQty(monthAchieved || totalAchieved)}</td>
                 <td className="border border-slate-700 p-2">{getPercent(totalAchieved, monthPlan || totalPlan)}</td>
@@ -247,9 +321,11 @@ function WeeklyReport({ currentUser }) {
               <tr className="bg-slate-100 font-bold">
                 <td className="border border-slate-700 p-2 text-left">Cumulative Total</td>
                 <td colSpan={4} className="border border-slate-700 p-2">{formatQty(totalPlan)}</td>
-                <td className="border border-slate-700 p-2">{formatQty(cumulativeByWeek[2])}</td>
-                <td className="border border-slate-700 p-2">{formatQty(cumulativeByWeek[3])}</td>
-                <td className="border border-slate-700 p-2">{formatQty(cumulativeByWeek[4])}</td>
+                {lookAheadColumnWeeks.map((week, index) => (
+                  <td key={`cumulative-lookahead-${index}`} className="border border-slate-700 p-2">
+                    {week <= 4 ? formatQty(cumulativeByWeek[week]) : "-"}
+                  </td>
+                ))}
                 <td className="border border-slate-700 p-2">{formatQty(monthPlan || totalPlan)}</td>
                 <td className="border border-slate-700 p-2">{formatQty(monthAchieved || totalAchieved)}</td>
                 <td className="border border-slate-700 p-2">{getPercent(monthAchieved || totalAchieved, monthPlan || totalPlan)}</td>

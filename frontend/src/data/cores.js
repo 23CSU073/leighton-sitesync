@@ -1,5 +1,5 @@
 export const cores = [
-  "Core A",
-  "Core B",
-  "Core C",
+  "Pore 1",
+  "Pore 2",
+  "Pore 3",
 ];

@@ -1,6 +1,8 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
+  doc,
   serverTimestamp,
   onSnapshot,
   query,
@@ -18,6 +20,18 @@ export const addProgress = async (progressData) => {
         createdAt: serverTimestamp(),
       }
     );
+
+    return true;
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
+};
+
+export const deleteProgress = async (progressId) => {
+  try {
+    // Firestore rules enforce Admin/Planner deletes; this keeps the client aligned.
+    await deleteDoc(doc(db, "dailyProgress", progressId));
 
     return true;
   } catch (error) {

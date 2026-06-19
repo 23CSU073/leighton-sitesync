@@ -138,6 +138,32 @@ export const subscribeToMonthlyPlans = (callback) => {
   });
 };
 
+export const deleteMonthlyPlanner = async (planMonthKey) => {
+  try {
+    const snapshot = await getDocs(collection(db, collectionName));
+    const operations = [];
+
+    snapshot.docs
+      .filter((document) => {
+        const data = document.data();
+        const planDate = getPlanDate(data);
+        const rowMonthKey = data.planMonthKey || data.planId || getPlanMonthKey(planDate.month, planDate.year);
+
+        return rowMonthKey === planMonthKey;
+      })
+      .forEach((document) => {
+        operations.push((batch) => batch.delete(document.ref));
+      });
+
+    await commitOperations(operations);
+
+    return true;
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
+};
+
 export const archiveMonthlyPlan = (id) =>
   updateDoc(doc(db, collectionName, id), {
     status: "archived",

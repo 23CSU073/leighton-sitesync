@@ -38,7 +38,7 @@ function App() {
         return <SiteLayout setCurrentPage={setCurrentPage} />;
 
       case "daily-progress":
-        return <DailyProgress setCurrentPage={setCurrentPage} />;
+        return <DailyProgress currentUser={currentUser} setCurrentPage={setCurrentPage} />;
 
       case "monthly-plans":
         return <MonthlyPlans setCurrentPage={setCurrentPage} />;

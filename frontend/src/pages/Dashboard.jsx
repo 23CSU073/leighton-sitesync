@@ -1,10 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-import {
-  addReason,
-  getDefaultShortfallReasons,
-  subscribeToReasons,
-} from "../services/reasonService";
 import { subscribeToWeeklyData } from "../services/weeklyReportService";
 
 const sumQuantity = (rows, field) =>
@@ -22,32 +17,226 @@ const formatDateLabel = (dateValue) => {
   return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 };
 
-const buildDailyChartRows = (progress, totalPlan) => {
-  const dailyActualMap = progress.reduce((map, item) => {
-    const key = item.date || new Date().toISOString().split("T")[0];
-    map[key] = (map[key] || 0) + Number(item.quantity || 0);
+const getWeekIndexForDate = (dateValue) => {
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const day = date.getDate();
+
+  if (day >= 1 && day <= 7) return 0;
+  if (day >= 8 && day <= 14) return 1;
+  if (day >= 15 && day <= 22) return 2;
+  if (day >= 23 && day <= 30) return 3;
+  return null;
+};
+
+const weekStartDays = [1, 8, 15, 23];
+
+const normalizeText = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+const normalizeReconciliationActivity = (activity) => {
+  const normalized = normalizeText(activity);
+
+  return normalized.includes("concrete") ? "concrete" : normalized;
+};
+
+const getReconciliationKey = (item) =>
+  [
+    normalizeText(item.tower),
+    normalizeText(item.level),
+    normalizeText(item.pour || item.core),
+    normalizeReconciliationActivity(item.activity),
+  ].join("|");
+
+const getReconciliationLabel = (item) =>
+  [item.tower, item.level, item.pour || item.core, item.activity]
+    .filter(Boolean)
+    .join(" / ");
+
+const getProgressReason = (item) => item.reason || item.hindranceReason || "";
+
+const isApplicableReason = (reason) =>
+  Boolean(reason) && normalizeText(reason) !== "not applicable";
+
+const buildReasonMap = (progress) => {
+  const reasonMap = new Map();
+
+  progress.forEach((item) => {
+    const reason = getProgressReason(item);
+
+    if (!isApplicableReason(reason)) {
+      return;
+    }
+
+    const key = getReconciliationKey(item);
+    const existing = reasonMap.get(key) || new Set();
+
+    existing.add(reason);
+    reasonMap.set(key, existing);
+  });
+
+  return reasonMap;
+};
+
+const getReasonsForKey = (reasonMap, key) =>
+  [...(reasonMap.get(key) || [])].join(", ");
+
+const buildReconciliationRows = (actuals, progress, cutoffDate) => {
+  const cutoffWeekIndex = getWeekIndexForDate(cutoffDate);
+  const actualMap = new Map();
+  const dailyMap = new Map();
+  const reasonMap = buildReasonMap(
+    progress.filter((item) => !cutoffDate || item.date <= cutoffDate)
+  );
+
+  actuals.forEach((item) => {
+    const key = getReconciliationKey(item);
+    const weeklyActual = Array.isArray(item.weeklyActual) ? item.weeklyActual : [];
+    const actualTillDate = weeklyActual.length > 0
+      ? weeklyActual
+          .slice(0, cutoffWeekIndex + 1)
+          .reduce((sum, value) => sum + Number(value || 0), 0)
+      : Number(item.actualQuantity || 0);
+    const existing = actualMap.get(key) || {
+      key,
+      label: getReconciliationLabel(item),
+      actual: 0,
+    };
+
+    existing.actual += actualTillDate;
+    actualMap.set(key, existing);
+  });
+
+  progress
+    .filter((item) => !cutoffDate || item.date <= cutoffDate)
+    .forEach((item) => {
+      const key = getReconciliationKey(item);
+      const existing = dailyMap.get(key) || {
+        key,
+        label: getReconciliationLabel(item),
+        daily: 0,
+      };
+
+      existing.daily += Number(item.quantity || 0);
+      dailyMap.set(key, existing);
+    });
+
+  return [...new Set([...actualMap.keys(), ...dailyMap.keys()])]
+    .map((key) => {
+      const actual = actualMap.get(key);
+      const daily = dailyMap.get(key);
+      const actualQuantity = Number(actual?.actual || 0);
+      const dailyQuantity = Number(daily?.daily || 0);
+      const variance = dailyQuantity - actualQuantity;
+      let status = "Matched";
+
+      if (actualQuantity > 0 && dailyQuantity === 0) {
+        status = "Daily Log Missing";
+      } else if (actualQuantity === 0 && dailyQuantity !== 0) {
+        status = "Only Daily Log Found";
+      } else if (Math.abs(variance) > 0.1) {
+        status = "Quantity Mismatch";
+      }
+
+      return {
+        key,
+        label: actual?.label || daily?.label || "Unmapped",
+        actual: actualQuantity,
+        daily: dailyQuantity,
+        variance,
+        status,
+        reason: getReasonsForKey(reasonMap, key),
+      };
+    })
+    .filter((row) => row.actual > 0 || row.daily !== 0)
+    .sort((first, second) => Math.abs(second.variance) - Math.abs(first.variance));
+};
+
+const getChartDateKey = (dateValue) => {
+  if (dateValue?.toDate) {
+    return dateValue.toDate().toISOString().split("T")[0];
+  }
+
+  if (dateValue instanceof Date) {
+    return dateValue.toISOString().split("T")[0];
+  }
+
+  return String(dateValue || new Date().toISOString().split("T")[0]).split("T")[0];
+};
+
+const getFallbackWeekDate = (monthKey, weekIndex) => {
+  const [year, month] = String(monthKey || "").split("-");
+  const date = new Date(Number(year), Number(month) - 1, weekStartDays[weekIndex] || 1);
+
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().split("T")[0];
+};
+
+const addToDateMap = (map, date, value) => {
+  if (!date) {
+    return;
+  }
+
+  map[date] = (map[date] || 0) + Number(value || 0);
+};
+
+const buildDailyChartRows = (progress, totalPlan, actuals = [], plans = [], weekIndex = 0, monthKey = "") => {
+  const plannedMap = plans.reduce((map, plan) => {
+    const date = plan.planDate ? getChartDateKey(plan.planDate) : "";
+
+    if (date && getWeekIndexForDate(date) === weekIndex) {
+      addToDateMap(map, date, Number(plan.plannedQuantity || plan.monthPlan || 0));
+    }
+
     return map;
   }, {});
-  const dates = Object.keys(dailyActualMap).sort();
-  const fallbackDates = Array.from({ length: 14 }, (_, index) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (13 - index));
-    return date.toISOString().split("T")[0];
-  });
-  const chartDates = dates.length > 0 ? dates : fallbackDates;
-  const dailyPlan = chartDates.length > 0 ? Number(totalPlan || 0) / chartDates.length : 0;
+  const actualSource = actuals.length > 0 ? actuals : progress;
+  const dailyActualMap = actualSource.reduce((map, item) => {
+    const date = item.date ? getChartDateKey(item.date) : "";
+
+    if (date && getWeekIndexForDate(date) === weekIndex) {
+      addToDateMap(
+        map,
+        date,
+        actuals.length > 0 ? Number(item.actualQuantity || item.quantity || 0) : Number(item.quantity || 0)
+      );
+      return map;
+    }
+
+    if (actuals.length > 0 && !date && Array.isArray(item.weeklyActual)) {
+      const fallbackDate = getFallbackWeekDate(monthKey, weekIndex);
+      addToDateMap(map, fallbackDate, Number(item.weeklyActual[weekIndex] || 0));
+    }
+
+    return map;
+  }, {});
+  const dates = [...new Set([...Object.keys(plannedMap), ...Object.keys(dailyActualMap)])].sort();
+
+  if (dates.length === 0) {
+    return [];
+  }
+
+  const hasDatedPlan = Object.keys(plannedMap).length > 0;
+  const fallbackDailyPlan = hasDatedPlan ? 0 : Number(totalPlan || 0) / dates.length;
   let plannedCumulative = 0;
   let actualCumulative = 0;
 
-  return chartDates.map((date) => {
+  return dates.map((date) => {
+    const planned = hasDatedPlan ? Number(plannedMap[date] || 0) : fallbackDailyPlan;
     const actual = Number(dailyActualMap[date] || 0);
-    plannedCumulative += dailyPlan;
+    plannedCumulative += planned;
     actualCumulative += actual;
 
     return {
       date,
       label: formatDateLabel(date),
-      planned: dailyPlan,
+      planned,
       actual,
       plannedCumulative,
       actualCumulative,
@@ -168,16 +357,19 @@ function HistogramSCurveChart({ rows }) {
   );
 }
 
-function DonutChart({ items }) {
-  const total = items.reduce((sum, item) => sum + Number(item.value || 0), 0) || 1;
-  let cursor = 0;
-  const gradient = items
-    .map((item) => {
-      const start = cursor;
-      cursor += (Number(item.value || 0) / total) * 100;
-      return `${item.hex} ${start}% ${cursor}%`;
-    })
-    .join(", ");
+function DonutChart({ planned, tracked }) {
+  const plannedValue = Number(planned || 0);
+  const trackedValue = Number(tracked || 0);
+  const chartTotal = Math.max(plannedValue, trackedValue, 1);
+  const trackedPercent = Math.min((trackedValue / chartTotal) * 100, 100);
+  const items = [
+    { label: "Tracked", value: trackedValue, hex: "#16a34a" },
+    { label: "Planned", value: plannedValue, hex: "#f97316" },
+  ];
+  const gradient =
+    trackedPercent >= 100
+      ? "#16a34a 0% 100%"
+      : `#16a34a 0% ${trackedPercent}%, #f97316 ${trackedPercent}% 100%`;
 
   return (
     <div className="grid grid-cols-1 items-center gap-5 sm:grid-cols-[180px_1fr]">
@@ -187,7 +379,7 @@ function DonutChart({ items }) {
       >
         <div className="absolute inset-10 flex flex-col items-center justify-center rounded-full bg-white text-center shadow-inner">
           <span className="text-xs font-semibold text-slate-500">Total</span>
-          <span className="text-2xl font-bold">{formatNumber(total)}</span>
+          <span className="text-2xl font-bold">{formatNumber(plannedValue)}</span>
         </div>
       </div>
       <div className="space-y-3">
@@ -207,13 +399,31 @@ function DonutChart({ items }) {
 
 function PlannedActualBarChart({ rows }) {
   const width = 760;
-  const height = 280;
-  const padding = { top: 18, right: 28, bottom: 72, left: 56 };
+  const height = 320;
+  const padding = { top: 44, right: 28, bottom: 66, left: 56 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
-  const maxValue = Math.max(...rows.map((row) => Math.max(row.plan, row.achieved)), 1);
+  const maxDataValue = Math.max(...rows.map((row) => Math.max(row.plan, row.achieved)), 1);
+  const maxValue = maxDataValue * 1.18;
   const groupWidth = chartWidth / Math.max(rows.length, 1);
   const barWidth = Math.max(Math.min(groupWidth / 3, 24), 8);
+  const formatXAxisLabel = (value) =>
+    String(value || "")
+      .replace(/^Overall Towers \(Cumulative\)$/i, "Overall")
+      .replace(/^NTA Central Area$/i, "NTA")
+      .replace(/\bTower\s+(\d+)/gi, "T$1");
+  const splitLabel = (label) => {
+    if (label.length <= 10) {
+      return [label];
+    }
+
+    const words = label.split(" ");
+    const midpoint = Math.ceil(words.length / 2);
+
+    return words.length > 1
+      ? [words.slice(0, midpoint).join(" "), words.slice(midpoint).join(" ")]
+      : [label];
+  };
 
   return (
     <div className="overflow-x-auto">
@@ -231,15 +441,30 @@ function PlannedActualBarChart({ rows }) {
             const x = index * groupWidth + groupWidth / 2;
             const planHeight = (row.plan / maxValue) * chartHeight;
             const actualHeight = (row.achieved / maxValue) * chartHeight;
+            const label = formatXAxisLabel(row.tower);
+            const labelLines = splitLabel(label);
+            const labelY = Math.min(
+              chartHeight - Math.max(planHeight, actualHeight) - 10,
+              chartHeight - 12
+            );
 
             return (
               <g key={row.tower}>
                 <rect x={x - barWidth - 2} y={chartHeight - planHeight} width={barWidth} height={planHeight} fill="#2563eb" />
                 <rect x={x + 2} y={chartHeight - actualHeight} width={barWidth} height={actualHeight} fill="#f97316" />
-                <text x={x} y={chartHeight + 18} textAnchor="middle" className="fill-slate-700 text-[10px]">
-                  {row.tower}
+                <text
+                  x={x}
+                  y={labelY}
+                  textAnchor="middle"
+                  className="fill-slate-700 text-[9px]"
+                >
+                  {labelLines.map((line, lineIndex) => (
+                    <tspan key={line} x={x} dy={lineIndex === 0 ? 0 : 10}>
+                      {line}
+                    </tspan>
+                  ))}
                 </text>
-                <text x={x} y={chartHeight + 34} textAnchor="middle" className="fill-slate-500 text-[10px]">
+                <text x={x} y={chartHeight + 20} textAnchor="middle" className="fill-slate-500 text-[9px]">
                   {formatNumber(row.achieved - row.plan)}
                 </text>
               </g>
@@ -253,49 +478,20 @@ function PlannedActualBarChart({ rows }) {
   );
 }
 
-function Dashboard({ currentUser }) {
+function Dashboard() {
   const [dashboardData, setDashboardData] = useState(null);
-  const [shortfallReasons, setShortfallReasons] = useState([]);
-  const [selectedReason, setSelectedReason] = useState("");
-  const [customReason, setCustomReason] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
+  const [selectedWeekIndex, setSelectedWeekIndex] = useState();
+  const [selectedMonthKey, setSelectedMonthKey] = useState("");
+  const [reconciliationDate, setReconciliationDate] = useState(new Date().toISOString().split("T")[0]);
 
   useEffect(() => {
-    const unsubscribe = subscribeToWeeklyData(setDashboardData);
+    const unsubscribe = subscribeToWeeklyData(setDashboardData, {
+      selectedWeekIndex,
+      selectedMonthKey,
+    });
 
     return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = subscribeToReasons("shortfallReasons", setShortfallReasons);
-
-    return () => unsubscribe();
-  }, []);
-
-  const reasonOptions = useMemo(() => {
-    const firestoreReasons = shortfallReasons.map((reason) => reason.name);
-
-    return [...new Set([...getDefaultShortfallReasons(), ...firestoreReasons])];
-  }, [shortfallReasons]);
-
-  const handleSaveReason = async () => {
-    const name = selectedReason === "Others" ? customReason : selectedReason;
-
-    if (!name) {
-      setErrorMessage("Select or enter a shortfall reason first.");
-      return;
-    }
-
-    try {
-      await addReason("shortfallReasons", name, currentUser?.email || "system");
-      setSelectedReason("");
-      setCustomReason("");
-      setErrorMessage("");
-    } catch (error) {
-      console.error(error);
-      setErrorMessage("Shortfall reason could not be saved.");
-    }
-  };
+  }, [selectedWeekIndex, selectedMonthKey]);
 
   if (!dashboardData) {
     return <div className="rounded-lg bg-white p-6 shadow">Loading Dashboard...</div>;
@@ -303,21 +499,35 @@ function Dashboard({ currentUser }) {
 
   const {
     totalPlan,
+    totalMonthPlan,
     totalAchieved,
     percentage,
     weeklyRows = [],
     actuals = [],
     progress = [],
+    plans = [],
+    monthOptions = [],
+    hasTodayProgress = true,
+    todayKey = "",
+    selectedMonth = "",
+    selectedMonthLabel = "",
+    missingCurrentMonthPlan = false,
+    missingSelectedMonthPlan = false,
+    monthPerformanceRows = [],
   } = dashboardData;
   const dailyTracked = sumQuantity(progress, "quantity");
   const variance = Number((totalAchieved - totalPlan).toFixed(1));
   const dailyVariance = Number((dailyTracked - totalPlan).toFixed(1));
-  const concreteDistribution = [
-    { label: "Planned", value: totalPlan, hex: "#2563eb" },
-    { label: "Actual Tracking", value: sumQuantity(actuals, "actualQuantity"), hex: "#16a34a" },
-    { label: "Daily Tracked", value: dailyTracked, hex: "#f97316" },
-  ];
-  const dailyChartRows = buildDailyChartRows(progress, totalPlan);
+  const trackedQuantity = totalAchieved;
+  const plannedQuantity = totalPlan;
+  const dailyChartRows = buildDailyChartRows(
+    progress,
+    totalPlan,
+    actuals,
+    plans,
+    dashboardData.currentWeekIndex,
+    selectedMonth
+  );
   const towerRows = Object.values(
     weeklyRows.reduce((groups, row) => {
       const key = row.tower || row.location || "Other";
@@ -327,15 +537,79 @@ function Dashboard({ currentUser }) {
       return groups;
     }, {})
   );
-  const chartTowerRows = towerRows
+  const chartTowerRows = [
+    ...towerRows
     .sort((first, second) => Math.max(second.plan, second.achieved) - Math.max(first.plan, first.achieved))
-    .slice(0, 10);
+      .slice(0, 10),
+    {
+      tower: "Overall Towers (Cumulative)",
+      plan: totalPlan,
+      achieved: totalAchieved,
+    },
+  ];
+  const reconciliationRows = buildReconciliationRows(actuals, progress, reconciliationDate);
+  const reconciliationTotals = reconciliationRows.reduce(
+    (totals, row) => ({
+      actual: totals.actual + Number(row.actual || 0),
+      daily: totals.daily + Number(row.daily || 0),
+      variance: totals.variance + Number(row.variance || 0),
+      flagged: totals.flagged + (row.status === "Matched" ? 0 : 1),
+    }),
+    { actual: 0, daily: 0, variance: 0, flagged: 0 }
+  );
 
   return (
     <div className="space-y-6">
-      {errorMessage && (
-        <p className="rounded-lg bg-red-50 p-4 font-semibold text-red-700">{errorMessage}</p>
+      {missingCurrentMonthPlan && (
+        <p className="rounded-lg bg-amber-50 p-4 font-semibold text-amber-800">
+          Current month planner is not uploaded yet. Please upload the monthly planner to start this month&apos;s dashboard.
+        </p>
       )}
+      {missingSelectedMonthPlan && (
+        <p className="rounded-lg bg-amber-50 p-4 font-semibold text-amber-800">
+          No planner found for {selectedMonthLabel || "the selected month"}. Please upload that monthly planner first.
+        </p>
+      )}
+      {!hasTodayProgress && (
+        <p className="rounded-lg bg-amber-50 p-4 font-semibold text-amber-800">
+          Warning: Please log your Daily Progress Tracking for today ({todayKey}).
+        </p>
+      )}
+      <section className="rounded-lg bg-white p-5 shadow">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold">Progress Period</h2>
+            <p className="mt-1 text-slate-600">Switch month and week to refresh dashboard charts.</p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <select
+              className="rounded-lg border bg-white p-3 font-semibold"
+              value={selectedMonthKey}
+              onChange={(event) => setSelectedMonthKey(event.target.value)}
+            >
+              <option value="">Current / Latest Month</option>
+              {monthOptions.map((month) => (
+                <option key={month.key} value={month.key}>{month.label}</option>
+              ))}
+            </select>
+            <div className="grid grid-cols-4 overflow-hidden rounded-lg border">
+              {[0, 1, 2, 3].map((weekIndex) => (
+                <button
+                  key={weekIndex}
+                  onClick={() => setSelectedWeekIndex(weekIndex)}
+                  className={`px-3 py-3 text-sm font-semibold ${
+                    dashboardData.currentWeekIndex === weekIndex
+                      ? "bg-slate-900 text-white"
+                      : "bg-white text-slate-700"
+                  }`}
+                >
+                  Week {weekIndex + 1}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="overflow-x-auto rounded-lg bg-white p-5 shadow">
         <h2 className="mb-4 text-2xl font-bold">Summary Table</h2>
@@ -405,9 +679,9 @@ function Dashboard({ currentUser }) {
 
         <div className="rounded-lg bg-white p-5 shadow">
           <h2 className="text-xl font-bold">Concrete Distribution</h2>
-          <p className="mt-1 text-sm text-slate-600">Pie chart view of planned, actual tracking, and daily tracked quantity.</p>
+          <p className="mt-1 text-sm text-slate-600">Tracked quantity against monthly planner quantity.</p>
           <div className="mt-5">
-            <DonutChart items={concreteDistribution} />
+            <DonutChart planned={plannedQuantity} tracked={trackedQuantity} />
           </div>
         </div>
 
@@ -427,32 +701,118 @@ function Dashboard({ currentUser }) {
       </section>
 
       <section className="rounded-lg bg-white p-5 shadow">
-        <h2 className="text-2xl font-bold">Reasons for Shortfall</h2>
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <select
-            className="rounded-lg border p-3"
-            value={selectedReason}
-            onChange={(event) => setSelectedReason(event.target.value)}
-          >
-            <option value="">Select reason</option>
-            {reasonOptions.map((reason) => (
-              <option key={reason} value={reason}>{reason}</option>
-            ))}
-            <option value="Others">Others</option>
-          </select>
-          {selectedReason === "Others" && (
-            <input
-              className="rounded-lg border p-3"
-              placeholder="Enter custom reason"
-              value={customReason}
-              onChange={(event) => setCustomReason(event.target.value)}
-            />
-          )}
-          <button onClick={handleSaveReason} className="rounded-lg bg-slate-900 p-3 font-semibold text-white">
-            Save Reason
-          </button>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold">Daily Log Reconciliation</h2>
+            <p className="mt-1 text-slate-600">Uploaded actual tracking vs engineer daily logs up to selected date.</p>
+          </div>
+          <input
+            type="date"
+            className="rounded-lg border bg-white p-3 font-semibold"
+            value={reconciliationDate}
+            onChange={(event) => setReconciliationDate(event.target.value)}
+          />
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="rounded-lg bg-slate-100 p-4">
+            <p className="text-sm text-slate-600">Actual Tracking</p>
+            <p className="text-2xl font-bold">{formatNumber(reconciliationTotals.actual)} Cum</p>
+          </div>
+          <div className="rounded-lg bg-slate-100 p-4">
+            <p className="text-sm text-slate-600">Daily Logged</p>
+            <p className="text-2xl font-bold">{formatNumber(reconciliationTotals.daily)} Cum</p>
+          </div>
+          <div className="rounded-lg bg-slate-100 p-4">
+            <p className="text-sm text-slate-600">Daily - Actual</p>
+            <p className={`text-2xl font-bold ${reconciliationTotals.variance < 0 ? "text-red-600" : "text-green-700"}`}>
+              {formatNumber(reconciliationTotals.variance)} Cum
+            </p>
+          </div>
+          <div className="rounded-lg bg-slate-100 p-4">
+            <p className="text-sm text-slate-600">Flagged Rows</p>
+            <p className="text-2xl font-bold">{reconciliationTotals.flagged}</p>
+          </div>
+        </div>
+
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[1040px] border text-sm">
+            <thead className="bg-slate-100">
+              <tr>
+                <th className="border p-3 text-left">Tower / Level / Pour / Activity</th>
+                <th className="border p-3 text-left">Actual Till Date</th>
+                <th className="border p-3 text-left">Daily Logged Till Date</th>
+                <th className="border p-3 text-left">Variance</th>
+                <th className="border p-3 text-left">Status</th>
+                <th className="border p-3 text-left">Shortfall Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reconciliationRows.length > 0 ? reconciliationRows.slice(0, 20).map((row) => (
+                <tr key={row.key} className="odd:bg-white even:bg-slate-50">
+                  <td className="border p-3 font-semibold">{row.label}</td>
+                  <td className="border p-3">{formatNumber(row.actual)} Cum</td>
+                  <td className="border p-3">{formatNumber(row.daily)} Cum</td>
+                  <td className={`border p-3 font-semibold ${row.variance < 0 ? "text-red-600" : "text-green-700"}`}>
+                    {formatNumber(row.variance)} Cum
+                  </td>
+                  <td className={`border p-3 font-semibold ${row.status === "Matched" ? "text-green-700" : "text-amber-700"}`}>
+                    {row.status}
+                  </td>
+                  <td className="border p-3">{row.reason}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td className="border p-3 text-slate-600" colSpan={6}>No actual tracking or daily log rows found for reconciliation.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
+
+      <section className="rounded-lg bg-white p-5 shadow">
+        <h2 className="text-2xl font-bold">Previous Months Performance Review</h2>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[760px] border text-sm">
+            <thead className="bg-slate-100">
+              <tr>
+                <th className="border p-3 text-left">Month</th>
+                <th className="border p-3 text-left">Planned</th>
+                <th className="border p-3 text-left">Achieved</th>
+                <th className="border p-3 text-left">Variance</th>
+                <th className="border p-3 text-left">Achievement</th>
+                <th className="border p-3 text-left">Weekly Breakdown</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthPerformanceRows.length > 0 ? monthPerformanceRows.map((month) => (
+                <tr key={month.monthKey} className="odd:bg-white even:bg-slate-50">
+                  <td className="border p-3 font-semibold">{month.monthLabel}</td>
+                  <td className="border p-3">{formatNumber(month.planned)} Cum</td>
+                  <td className="border p-3">{formatNumber(month.achieved)} Cum</td>
+                  <td className={`border p-3 font-semibold ${month.variance < 0 ? "text-red-600" : "text-green-700"}`}>
+                    {formatNumber(month.variance)} Cum
+                  </td>
+                  <td className="border p-3">{month.percentage}%</td>
+                  <td className="border p-3">
+                    {month.weeklyBreakdown.map((week) => (
+                      <span key={week.week} className="mr-3 inline-block whitespace-nowrap">
+                        {week.week}: {formatNumber(week.achieved)} / {formatNumber(week.planned)}
+                      </span>
+                    ))}
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td className="border p-3 text-slate-600" colSpan={6}>No monthly performance rows available.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
     </div>
   );
 }

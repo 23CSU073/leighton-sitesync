@@ -4,6 +4,12 @@ const normalize = (value) =>
     .trim()
     .toLowerCase();
 
+const normalizeCompact = (value) =>
+  String(value ?? "")
+    .replace(/[^a-z0-9]+/gi, "")
+    .trim()
+    .toLowerCase();
+
 export const getCell = (row, index) => row?.[index] ?? null;
 
 export const parseWorkbookDate = (value) => {
@@ -20,11 +26,13 @@ export const parseWorkbookDate = (value) => {
 
 export const isRealTowerName = (value) =>
   typeof value === "string" &&
-  /^(Tower\s*\d+|T\d+|PCC|NTA|Central NTA|Club House)$/i.test(value.trim());
+  (/^(Tower\s*\d+|T\d+|PCC|NTA|Central NTA|Club House)$/i.test(value.trim()) ||
+    normalizeCompact(value) === "pcc");
 
 export const isSpecialAreaName = (value) =>
   typeof value === "string" &&
-  /^(PCC|NTA|Central NTA|Club House)$/i.test(value.trim());
+  (/^(PCC|NTA|Central NTA|Club House)$/i.test(value.trim()) ||
+    normalizeCompact(value) === "pcc");
 
 export const isRealLevelName = (value) =>
   typeof value === "string" &&
@@ -42,8 +50,8 @@ export const getWeekIndexFromDate = (value) => {
 
   if (day >= 1 && day <= 7) return 0;
   if (day >= 8 && day <= 14) return 1;
-  if (day >= 15 && day <= 21) return 2;
-  if (day >= 22 && day <= 31) return 3;
+  if (day >= 15 && day <= 22) return 2;
+  if (day >= 23 && day <= 30) return 3;
   return null;
 };
 
@@ -111,6 +119,46 @@ export const buildWeeklyValues = (row, dateColumns) =>
         .map((column) => column.index)
     )
   );
+
+export const buildCumulativeCutoffValues = (row, dateColumns) =>
+  [7, 14, 22, 30].map((cutoffDay) =>
+    sumColumns(
+      row,
+      dateColumns
+        .filter((column) => column.date.getDate() <= cutoffDay)
+        .map((column) => column.index)
+    )
+  );
+
+export const getSummaryCumulativePlanValues = (rows, layout) => {
+  const firstTotalColumn = layout.totalColumns[0] ?? Infinity;
+  const dateColumns = layout.dateColumns.filter((column) => column.index < firstTotalColumn);
+  const cutoffColumns = [7, 14, 22, 30].map((cutoffDay) =>
+    dateColumns
+      .filter((column) => column.date.getDate() <= cutoffDay)
+      .at(-1)
+  );
+
+  if (cutoffColumns.some((column) => !column)) {
+    return [0, 0, 0, 0];
+  }
+
+  return rows.reduce(
+    (totals, row) => {
+      const rowType = normalize(getCell(row, layout.columns.rowType));
+      const level = normalize(getCell(row, layout.columns.level));
+
+      if (rowType !== "plan" || !level.includes("cumm") || !level.includes("plan")) {
+        return totals;
+      }
+
+      return totals.map(
+        (total, index) => total + Number(getCell(row, cutoffColumns[index].index) || 0)
+      );
+    },
+    [0, 0, 0, 0]
+  );
+};
 
 export const getRowTotal = (row, layout) => {
   const totalFromHeader = sumColumns(row, layout.totalColumns);

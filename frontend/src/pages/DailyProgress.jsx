@@ -1,12 +1,23 @@
 import { useEffect, useState } from "react";
 
-import { addProgress, subscribeToProgress } from "../services/dprService";
+import { addProgress, deleteProgress, subscribeToProgress } from "../services/dprService";
+import { delayReasons } from "../data/delayReasons";
 import {
   getAreas,
   getLevelsForTower,
   getPoursForTower,
   getTowersForArea,
 } from "../data/towerConfig";
+
+const activityOptions = [
+  "Vertical Steel",
+  "Vertical Formwork / Shuttering",
+  "Vertical Concrete",
+  "Slab Decking / Shuttering",
+  "Steel Finishing",
+  "Slab Concrete",
+  "Others",
+];
 
 const initialFormData = () => ({
   date: new Date().toISOString().split("T")[0],
@@ -16,13 +27,29 @@ const initialFormData = () => ({
   pour: "",
   shift: "",
   activity: "",
+  customActivity: "",
   quantity: "",
+  reason: "",
+  durationInDays: "",
 });
 
-function DailyProgress() {
+const addDays = (dateValue, days) => {
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  date.setDate(date.getDate() + Number(days || 0));
+  return date.toISOString().split("T")[0];
+};
+
+function DailyProgress({ currentUser }) {
   const [formData, setFormData] = useState(initialFormData);
   const [progressList, setProgressList] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     const unsubscribe = subscribeToProgress((data) => {
@@ -32,26 +59,50 @@ function DailyProgress() {
     return () => unsubscribe();
   }, []);
 
-  const totalConcreteToday = progressList.reduce(
+  const todayKey = new Date().toISOString().split("T")[0];
+  const todayProgressList = progressList.filter((item) => item.date === todayKey);
+  const totalConcreteToday = todayProgressList.reduce(
     (total, item) => total + Number(item.quantity || 0),
     0
   );
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    setErrorMessage("");
+
+    if (!formData.reason) {
+      setErrorMessage("Reason selection is compulsory. Choose Not Applicable if there was no hindrance.");
+      return;
+    }
+
+    if (formData.reason !== "Not Applicable" && Number(formData.durationInDays || 0) <= 0) {
+      setErrorMessage("Enter hindrance duration in days.");
+      return;
+    }
+
     setSaving(true);
+    const durationInDays =
+      formData.reason === "Not Applicable" ? 0 : Number(formData.durationInDays || 0);
 
     const newEntry = {
       date: formData.date,
-      engineerName: "Site Engineer",
+      engineerName: currentUser?.displayName || currentUser?.email || "Site Engineer",
+      createdBy: currentUser?.uid || "",
+      createdByEmail: currentUser?.email || "",
       area: formData.area,
       tower: formData.tower,
       level: formData.level,
       pour: formData.pour,
       core: formData.pour,
       shift: formData.shift,
-      activity: formData.activity,
+      activity: formData.activity === "Others" ? formData.customActivity : formData.activity,
       quantity: Number(formData.quantity),
+      reason: formData.reason,
+      hindranceReason: formData.reason,
+      startDate: formData.date,
+      durationInDays,
+      endDate: durationInDays > 0 ? addDays(formData.date, durationInDays) : formData.date,
+      delayOffsetDays: formData.reason === "Not Applicable" ? 0 : durationInDays,
     };
 
     const success = await addProgress(newEntry);
@@ -65,8 +116,42 @@ function DailyProgress() {
     alert("Failed to save progress");
   };
 
+  const normalizedRole = String(currentUser?.role || "").trim().toLowerCase();
+  const canDelete = ["admin", "planner"].includes(normalizedRole);
+
+  const handleDelete = async (item) => {
+    if (!canDelete) {
+      setErrorMessage("Only Admin and Planner users can delete daily progress entries.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete this progress entry for ${item.tower || "this tower"} (${item.quantity} Cum)?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingId(item.id);
+    setErrorMessage("");
+
+    const success = await deleteProgress(item.id);
+    setDeletingId("");
+
+    if (!success) {
+      setErrorMessage("Progress entry could not be deleted.");
+    }
+  };
+
   return (
     <>
+      {errorMessage && (
+        <p className="mb-5 rounded-lg bg-red-50 p-4 font-semibold text-red-700">
+          {errorMessage}
+        </p>
+      )}
+
       <form
         onSubmit={handleSubmit}
         className="grid grid-cols-1 gap-5 rounded-lg bg-white p-5 shadow md:grid-cols-2"
@@ -178,13 +263,31 @@ function DailyProgress() {
           </select>
         </label>
 
-        <input
-          type="text"
-          placeholder="Enter Activity"
-          className="w-full rounded-lg border bg-white p-4"
-          value={formData.activity}
-          onChange={(event) => setFormData({ ...formData, activity: event.target.value })}
-        />
+        <label className="block">
+          <span className="mb-2 block font-semibold">Activity</span>
+          <select
+            className="w-full rounded-lg border bg-white p-4"
+            value={formData.activity}
+            onChange={(event) => setFormData({ ...formData, activity: event.target.value, customActivity: "" })}
+          >
+            <option value="">Select Activity</option>
+            {activityOptions.map((activity) => (
+              <option key={activity} value={activity}>
+                {activity}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {formData.activity === "Others" && (
+          <input
+            type="text"
+            placeholder="Specify Activity"
+            className="w-full rounded-lg border bg-white p-4"
+            value={formData.customActivity}
+            onChange={(event) => setFormData({ ...formData, customActivity: event.target.value })}
+          />
+        )}
 
         <div>
           <input
@@ -196,6 +299,41 @@ function DailyProgress() {
           />
           <p className="mt-2 text-sm font-semibold text-blue-600">Unit: Cum</p>
         </div>
+
+        <label className="block">
+          <span className="mb-2 block font-semibold">Reason</span>
+          <select
+            required
+            className="w-full rounded-lg border bg-white p-4"
+            value={formData.reason}
+            onChange={(event) => setFormData({ ...formData, reason: event.target.value })}
+          >
+            <option value="">Select Reason</option>
+            {delayReasons.map((reason) => (
+              <option key={reason} value={reason}>
+                {reason}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {formData.reason && formData.reason !== "Not Applicable" && (
+          <label className="block">
+            <span className="mb-2 block font-semibold">Hindrance Duration (Days)</span>
+            <input
+              type="number"
+              min="1"
+              className="w-full rounded-lg border bg-white p-4"
+              value={formData.durationInDays}
+              onChange={(event) => setFormData({ ...formData, durationInDays: event.target.value })}
+            />
+            {formData.date && formData.durationInDays && (
+              <p className="mt-2 text-sm font-semibold text-slate-600">
+                Resume after: {addDays(formData.date, formData.durationInDays)}
+              </p>
+            )}
+          </label>
+        )}
 
         <button
           type="submit"
@@ -213,11 +351,11 @@ function DailyProgress() {
 
       <div className="mt-8">
         <h2 className="mb-4 text-2xl font-bold">Today's Progress</h2>
-        {progressList.length === 0 ? (
+        {todayProgressList.length === 0 ? (
           <div className="rounded-lg bg-white p-4 shadow">No progress submitted yet.</div>
         ) : (
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {progressList.map((item) => (
+            {todayProgressList.map((item) => (
               <div key={item.id} className="rounded-lg bg-white p-4 shadow">
                 <p><strong>Date:</strong> {item.date}</p>
                 <p><strong>Engineer:</strong> {item.engineerName}</p>
@@ -228,6 +366,20 @@ function DailyProgress() {
                 <p><strong>Shift:</strong> {item.shift}</p>
                 <p><strong>Activity:</strong> {item.activity}</p>
                 <p><strong>Quantity:</strong> {item.quantity} Cum</p>
+                <p><strong>Reason:</strong> {item.reason || item.hindranceReason || "Not Applicable"}</p>
+                {Number(item.delayOffsetDays || 0) > 0 && (
+                  <p><strong>Resume After:</strong> {item.endDate}</p>
+                )}
+                {canDelete && (
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(item)}
+                    disabled={deletingId === item.id}
+                    className="mt-4 rounded-lg bg-red-600 px-4 py-2 font-semibold text-white disabled:opacity-60"
+                  >
+                    {deletingId === item.id ? "Deleting..." : "Delete Entry"}
+                  </button>
+                )}
               </div>
             ))}
           </div>

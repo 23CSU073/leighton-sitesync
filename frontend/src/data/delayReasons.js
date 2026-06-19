@@ -1,10 +1,12 @@
 export const delayReasons = [
-  "Material Shortage",
+  "Material Delay",
+  "Drawing Issue",
   "Labour Shortage",
-  "Rain",
   "Equipment Breakdown",
-  "Inspection Pending",
-  "Drawing Delay",
-  "Safety Issue",
-  "Other",
+  "Weather",
+  "Safety Restriction",
+  "Client Instruction",
+  "Rework",
+  "Access Issue",
+  "Not Applicable",
 ];
